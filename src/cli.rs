@@ -40,11 +40,31 @@ pub struct Cli {
         short = 'm',
         long = "mismatches",
         value_name = "INT",
+        help = "Maximum allowed mismatches in primer matching",
         default_value_t = 2
     )]
     pub max_mismatches: usize,
 
+    #[arg(
+        short = 'l',
+        long = "search-length",
+        value_name = "INT",
+        help = "Length to search for primer at start and end of sequence",
+        default_value_t = 100
+    )]
+    pub search_length: usize,
+
     /// Number of threads to use
     #[arg(short = 't', long = "threads", value_name = "INT", default_value_t = 4)]
     pub threads: usize,
+
+    /// Algorithm to use for primer matching
+    #[arg(
+        short = 'a',
+        long = "algorithm",
+        value_name = "METHOD",
+        help = "Primer matching algorithm: 'alignment' (semi-global alignment) or 'hamming' (Hamming distance)",
+        default_value = "alignment"
+    )]
+    pub algorithm: String,
 }
