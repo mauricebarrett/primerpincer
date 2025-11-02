@@ -1,124 +1,127 @@
-use crate::primer_search::{PrimerSearcher, HammingSearcher, AlignmentSearcher, SearchConfig, SearchMethod};
+use crate::primer_search::{PrimerMatcher, PairedPrimerSearchResult, reverse_complement};
+use paraseq::parallel::{ParallelProcessor, IntoProcessError};
+use paraseq::Record;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use anyhow;
 
-/// Reverse complement a DNA sequence
-pub fn reverse_complement(seq: &str) -> String {
-    seq.chars()
-        .rev()
-        .map(|c| match c {
-            'A' | 'a' => 'T',
-            'T' | 't' => 'A',
-            'C' | 'c' => 'G',
-            'G' | 'g' => 'C',
-            'N' | 'n' => 'N',
-            _ => 'N',
-        })
-        .collect()
-}
-
-/// Enum to hold either searcher type
-enum Searcher {
-    Alignment(AlignmentSearcher),
-    Hamming(HammingSearcher),
-}
-
-impl Searcher {
-    fn find_primer(&self, read: &str, primer: &str) -> Option<crate::primer_search::PrimerMatch> {
-        match self {
-            Searcher::Alignment(s) => s.find_primer(read, primer),
-            Searcher::Hamming(s) => s.find_primer(read, primer),
-        }
+/// Trim sequence and quality based on search result
+/// Handles reverse complementing if needed (after trimming)
+/// Returns (trimmed_sequence, trimmed_quality) if trimming is successful, None otherwise
+fn trim_sequence(
+    seq: &str,
+    qual: &str,
+    result: &PairedPrimerSearchResult,
+) -> Option<(String, String)> {
+    if !result.found {
+        return None;
+    }
+    
+    // Trim from both ends first (using original read coordinates)
+    // trim_start: position to start keeping (trim everything before this)
+    // trim_end: position to stop keeping (trim everything from this position to end)
+    if result.trim_end <= result.trim_start {
+        // Invalid trimming coordinates
+        return None;
+    }
+    
+    // Trim the original read
+    let trimmed_seq = &seq[result.trim_start..result.trim_end.min(seq.len())];
+    let trimmed_qual = if qual.len() >= result.trim_end {
+        &qual[result.trim_start..result.trim_end]
+    } else if qual.len() > result.trim_start {
+        &qual[result.trim_start..]
+    } else {
+        // Quality string too short
+        return None;
+    };
+    
+    // Don't keep sequences that become empty after trimming
+    if trimmed_seq.is_empty() {
+        return None;
+    }
+    
+    // Reverse complement the trimmed amplicon if needed
+    if result.needs_reverse_complement {
+        let seq_rc = reverse_complement(trimmed_seq);
+        let qual_rc = trimmed_qual.chars().rev().collect::<String>();
+        Some((seq_rc, qual_rc))
+    } else {
+        Some((trimmed_seq.to_string(), trimmed_qual.to_string()))
     }
 }
 
-/// Matcher for finding and trimming primers from sequences
-pub struct PrimerMatcher {
-    forward_primer: String,
-    forward_primer_rc: String,
-    reverse_primer: String,
-    reverse_primer_rc: String,
-    searcher: Searcher,
+/// Processor for trimming primers from FASTQ records
+/// Implements ParallelProcessor for use with paraseq parallel processing
+#[derive(Clone)]
+pub struct PrimerTrimmer {
+    matcher: PrimerMatcher,
+    local_output: String,
+    global_output: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
-impl PrimerMatcher {
-    /// Create a new PrimerMatcher with the specified configuration
+impl PrimerTrimmer {
     pub fn new(
+        output: Box<dyn Write + Send>,
         forward_primer: String,
         reverse_primer: String,
         search_length: usize,
         max_mismatches: usize,
-        algorithm: SearchMethod,
-    ) -> Self {
-        let searcher = match algorithm {
-            SearchMethod::Alignment => {
-                // For Alignment, max_error_rate defaults to 10% (0.1)
-                let config = SearchConfig {
-                    max_error_rate: 0.1,
-                    max_mismatches, // Not used for Alignment but keep for consistency
-                    window: search_length,
-                    method: SearchMethod::Alignment,
-                };
-                Searcher::Alignment(AlignmentSearcher { cfg: config })
-            }
-            SearchMethod::Hamming => {
-                let config = SearchConfig {
-                    max_error_rate: 0.0, // Not used for Hamming
-                    max_mismatches,
-                    window: search_length,
-                    method: SearchMethod::Hamming,
-                };
-                Searcher::Hamming(HammingSearcher { cfg: config })
-            }
-        };
+    ) -> anyhow::Result<Self> {
+        let matcher = PrimerMatcher::new(
+            forward_primer,
+            reverse_primer,
+            search_length,
+            max_mismatches,
+        )?;
         
-        Self {
-            forward_primer: forward_primer.clone(),
-            forward_primer_rc: reverse_complement(&forward_primer),
-            reverse_primer: reverse_primer.clone(),
-            reverse_primer_rc: reverse_complement(&reverse_primer),
-            searcher,
-        }
+        Ok(Self {
+            matcher,
+            local_output: String::new(),
+            global_output: Arc::new(Mutex::new(output)),
+        })
     }
-    
-    /// Find any primer match in the first search_length bases
-    /// Returns (primer_end_position, which_primer, orientation)
-    /// - primer_end_position: position where the primer ends (start of trimmed sequence)
-    /// - which_primer: true = forward primer, false = reverse primer
-    /// - orientation: true = forward orientation, false = reverse complement
-    pub fn find_primer_match(&self, seq: &str) -> Option<(usize, bool, bool)> {
-        // Try forward primer forward orientation
-        if let Some(m) = self.searcher.find_primer(seq, &self.forward_primer) {
-            return Some((m.end, true, true));
+}
+
+impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
+    fn process_record(&mut self, record: R) -> paraseq::parallel::Result<()> {
+        // Get sequence and quality from record
+        // Convert to &str - seq() returns Cow<[u8]>, qual() returns Option<&[u8]>
+        let seq_bytes = record.seq();
+        let seq = std::str::from_utf8(&seq_bytes)
+            .map_err(|e| e.into_process_error())?;
+        
+        let qual_bytes = record.qual()
+            .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
+        let qual = std::str::from_utf8(qual_bytes)
+            .map_err(|e| e.into_process_error())?;
+        
+        // Search for paired primers
+        let search_result = self.matcher.search_primers(seq);
+        
+        // Trim sequence and quality if primers found
+        if let Some((trimmed_seq, trimmed_qual)) = trim_sequence(seq, qual, &search_result) {
+            // Write trimmed record manually
+            use std::fmt::Write;
+            writeln!(self.local_output, "@{}", record.id_str())
+                .map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "{}", trimmed_seq)
+                .map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "+")
+                .map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "{}", trimmed_qual)
+                .map_err(|e| e.into_process_error())?;
         }
-        // Try forward primer reverse complement
-        if let Some(m) = self.searcher.find_primer(seq, &self.forward_primer_rc) {
-            return Some((m.end, true, false));
-        }
-        // Try reverse primer forward orientation
-        if let Some(m) = self.searcher.find_primer(seq, &self.reverse_primer) {
-            return Some((m.end, false, true));
-        }
-        // Try reverse primer reverse complement
-        if let Some(m) = self.searcher.find_primer(seq, &self.reverse_primer_rc) {
-            return Some((m.end, false, false));
-        }
-        None
+        // If no primer found, discard the read (don't write anything)
+        
+        Ok(())
     }
-    
-    /// Trim sequence and quality based on primer match position
-    /// Returns (trimmed_sequence, trimmed_quality) if trimming is successful, None otherwise
-    pub fn trim_sequence(&self, seq: &str, qual: &str, trim_pos: usize) -> Option<(String, String)> {
-        let trimmed_seq = &seq[trim_pos..];
-        let trimmed_qual = if qual.len() > trim_pos {
-            &qual[trim_pos..]
-        } else {
-            qual
-        };
-        
-        // Don't keep sequences that become empty after trimming
-        if trimmed_seq.is_empty() {
-            return None;
-        }
-        
-        Some((trimmed_seq.to_string(), trimmed_qual.to_string()))
+
+    fn on_batch_complete(&mut self) -> paraseq::parallel::Result<()> {
+        let mut global_out = self.global_output.lock().unwrap();
+        global_out.write_all(self.local_output.as_bytes())?;
+        global_out.flush()?;
+        self.local_output.clear();
+        Ok(())
     }
 }
