@@ -57,14 +57,4 @@ pub struct Cli {
     /// Number of threads to use
     #[arg(short = 't', long = "threads", value_name = "INT", default_value_t = 4)]
     pub threads: usize,
-
-    /// Algorithm to use for primer matching
-    #[arg(
-        short = 'a',
-        long = "algorithm",
-        value_name = "METHOD",
-        help = "Primer matching algorithm: 'alignment' (semi-global alignment) or 'hamming' (Hamming distance)",
-        default_value = "alignment"
-    )]
-    pub algorithm: String,
 }
