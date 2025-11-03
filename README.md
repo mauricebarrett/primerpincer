@@ -60,7 +60,7 @@ Options:
 
   -V, --version
           Print version
-
+```
 
 ## Examples
 
