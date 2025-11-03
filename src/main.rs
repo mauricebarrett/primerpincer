@@ -9,6 +9,8 @@ use io::process_fastq;
 
 fn main() -> anyhow::Result<()> {
     // Parse command-line arguments using Clap
+    // Note: Clap automatically handles --help and -h flags
+    // To programmatically print help, use: Cli::command().print_help()?;
     let args = Cli::parse();
 
     eprintln!("🦀 PrimerPincer — starting primer trimming");

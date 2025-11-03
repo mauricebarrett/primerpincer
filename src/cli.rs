@@ -20,7 +20,7 @@ impl Default for Algorithm {
 #[command(
     author = "Maurice Barrett",
     version = "alpha",
-    about = "A command-line tool for the rapid trimming of primers from long read amplicons",
+    about = "PrimerPincer - a CLI primer trimming tool for long-read sequencing data",
     long_about = None
 )]
 pub struct Cli {
