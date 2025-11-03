@@ -7,6 +7,7 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use crate::primer_trim::PrimerTrimmer;
+use crate::cli::Algorithm;
 
 /// Process FASTQ file with parallel primer trimming
 /// Handles both compressed (.gz) and uncompressed FASTQ files
@@ -16,7 +17,8 @@ pub fn process_fastq(
     forward_primer: &str,
     reverse_primer: &str,
     search_length: usize,
-    max_mismatches: usize,
+    algorithm: Algorithm,
+    edit_distance: usize,
     min_overlap: usize,
     threads: usize,
 ) -> anyhow::Result<()> {
@@ -44,7 +46,8 @@ pub fn process_fastq(
         forward_primer.to_string(),
         reverse_primer.to_string(),
         search_length,
-        max_mismatches,
+        algorithm,
+        edit_distance,
         min_overlap,
     )?;
     
