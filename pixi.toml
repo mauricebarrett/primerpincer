@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Maurice Barrett <mauricepatrickbarrett@gmail.com>"]
-channels = ["conda-forge"]
+channels = ["conda-forge", "bioconda"]
 name = "primerpincer"
 platforms = ["linux-64"]
 version = "0.1.0"
@@ -12,3 +12,5 @@ start = "cargo run"
 [dependencies]
 rust = ">=1.90.0,<1.91"
 compilers = ">=1.11.0,<2"
+cutadapt = ">=5.2,<6"
+python = ">=3.12.12,<3.13"

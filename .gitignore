@@ -7,6 +7,10 @@
 
 /target
 
+# Project specific ignores
+/example_data/
+
 
 setup.sh
 
+example_data/cutadapt/ATCC-MSA1003-toy-example.fastq.gz

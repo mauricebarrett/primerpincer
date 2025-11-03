@@ -894,6 +894,7 @@ dependencies = [
  "anyhow",
  "bio",
  "clap",
+ "flate2",
  "paraseq",
  "tempfile",
 ]

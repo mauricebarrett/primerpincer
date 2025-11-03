@@ -54,6 +54,16 @@ pub struct Cli {
     )]
     pub search_length: usize,
 
+    /// Minimum overlap length (cutadapt -O)
+    #[arg(
+        short = 'O',
+        long = "overlap",
+        value_name = "MINLENGTH",
+        help = "Minimum overlap length. Require MINLENGTH bases of the primer to match (like cutadapt -O)",
+        default_value_t = 6
+    )]
+    pub overlap: usize,
+
     /// Number of threads to use
     #[arg(short = 't', long = "threads", value_name = "INT", default_value_t = 4)]
     pub threads: usize,

@@ -18,6 +18,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Reverse primer: {}", args.reverse_primer);
     eprintln!("Allowed mismatches: {}", args.max_mismatches);
     eprintln!("Search length: {}", args.search_length);
+    eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
 
     // Process FASTQ file with primer trimming
@@ -28,6 +29,7 @@ fn main() -> anyhow::Result<()> {
         &args.reverse_primer,
         args.search_length,
         args.max_mismatches,
+        args.overlap,
         args.threads,
     )?;
 

@@ -7,7 +7,10 @@ edition = "2024"
 anyhow = "1.0.100"
 bio = "3.0.0"
 clap = { version = "4.5.51", features = ["derive"] }
+flate2 = "1.1.5"
 paraseq = "0.4.3"
+
 
 [dev-dependencies]
 tempfile = "3.23.0"
+

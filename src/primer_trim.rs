@@ -25,21 +25,15 @@ fn trim_sequence(
         return None;
     }
     
-    // Trim the original read
-    let trimmed_seq = &seq[result.trim_start..result.trim_end.min(seq.len())];
-    let trimmed_qual = if qual.len() >= result.trim_end {
-        &qual[result.trim_start..result.trim_end]
-    } else if qual.len() > result.trim_start {
-        &qual[result.trim_start..]
-    } else {
-        // Quality string too short
-        return None;
-    };
-    
-    // Don't keep sequences that become empty after trimming
-    if trimmed_seq.is_empty() {
-        return None;
+    // Ensure we have valid trim coordinates
+    let trim_end = result.trim_end.min(seq.len());
+    if trim_end <= result.trim_start {
+        return None; // Invalid or empty result
     }
+    
+    // Trim the sequence and quality
+    let trimmed_seq = &seq[result.trim_start..trim_end];
+    let trimmed_qual = qual.get(result.trim_start..trim_end)?; // Returns None if out of bounds
     
     // Reverse complement the trimmed amplicon if needed
     if result.needs_reverse_complement {
@@ -67,12 +61,14 @@ impl PrimerTrimmer {
         reverse_primer: String,
         search_length: usize,
         max_mismatches: usize,
+        min_overlap: usize,
     ) -> anyhow::Result<Self> {
         let matcher = PrimerMatcher::new(
             forward_primer,
             reverse_primer,
             search_length,
             max_mismatches,
+            min_overlap,
         )?;
         
         Ok(Self {
@@ -85,23 +81,17 @@ impl PrimerTrimmer {
 
 impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
     fn process_record(&mut self, record: R) -> paraseq::parallel::Result<()> {
-        // Get sequence and quality from record
-        // Convert to &str - seq() returns Cow<[u8]>, qual() returns Option<&[u8]>
+        // Convert sequence and quality to &str (keep bindings for lifetime)
         let seq_bytes = record.seq();
-        let seq = std::str::from_utf8(&seq_bytes)
-            .map_err(|e| e.into_process_error())?;
+        let seq = std::str::from_utf8(&seq_bytes).map_err(|e| e.into_process_error())?;
+        let qual_bytes = record.qual().ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
+        let qual = std::str::from_utf8(qual_bytes).map_err(|e| e.into_process_error())?;
         
-        let qual_bytes = record.qual()
-            .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
-        let qual = std::str::from_utf8(qual_bytes)
-            .map_err(|e| e.into_process_error())?;
-        
-        // Search for paired primers
+        // Search for paired primers and trim if found
         let search_result = self.matcher.search_primers(seq);
         
-        // Trim sequence and quality if primers found
         if let Some((trimmed_seq, trimmed_qual)) = trim_sequence(seq, qual, &search_result) {
-            // Write trimmed record manually
+            // Write trimmed record to local buffer
             use std::fmt::Write;
             writeln!(self.local_output, "@{}", record.id_str())
                 .map_err(|e| e.into_process_error())?;
@@ -112,7 +102,6 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
             writeln!(self.local_output, "{}", trimmed_qual)
                 .map_err(|e| e.into_process_error())?;
         }
-        // If no primer found, discard the read (don't write anything)
         
         Ok(())
     }
