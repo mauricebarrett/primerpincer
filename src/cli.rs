@@ -1,4 +1,19 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// Algorithm selection for primer matching
+#[derive(ValueEnum, Clone, Debug, Copy)]
+pub enum Algorithm {
+    /// Use SIMD-accelerated edit distance calculation
+    Simd,
+    /// Use Myers algorithm with IUPAC support
+    Myers,
+}
+
+impl Default for Algorithm {
+    fn default() -> Self {
+        Algorithm::Simd
+    }
+}
 
 /// 🦀 PrimerPincer — A command-line tool for the rapid trimming of primers from long read amplicons
 #[derive(Parser, Debug)]
@@ -35,15 +50,25 @@ pub struct Cli {
     )]
     pub reverse_primer: String,
 
-    /// Maximum allowed mismatches in primer matching
+    /// Algorithm selection for primer matching
     #[arg(
-        short = 'm',
-        long = "mismatches",
-        value_name = "INT",
-        help = "Maximum allowed mismatches in primer matching",
-        default_value_t = 2
+        short = 'a',
+        long = "algorithm",
+        value_enum,
+        help = "Algorithm to use for primer matching: simd (default) or myers",
+        default_value_t = Algorithm::Myers
     )]
-    pub max_mismatches: usize,
+    pub algorithm: Algorithm,
+
+    /// Maximum allowed edit distance in primer matching
+    #[arg(
+        short = 'e',
+        long = "edit-distance",
+        value_name = "INT",
+        help = "Maximum allowed edit distance in primer matching",
+        default_value_t = 3
+    )]
+    pub edit_distance: usize,
 
     #[arg(
         short = 'l',
