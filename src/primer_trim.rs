@@ -1,4 +1,5 @@
 use crate::primer_search::{PrimerMatcher, PairedPrimerSearchResult, reverse_complement};
+use crate::cli::Algorithm;
 use paraseq::parallel::{ParallelProcessor, IntoProcessError};
 use paraseq::Record;
 use std::io::Write;
@@ -60,14 +61,16 @@ impl PrimerTrimmer {
         forward_primer: String,
         reverse_primer: String,
         search_length: usize,
-        max_mismatches: usize,
+        algorithm: Algorithm,
+        edit_distance: usize,
         min_overlap: usize,
     ) -> anyhow::Result<Self> {
         let matcher = PrimerMatcher::new(
             forward_primer,
             reverse_primer,
             search_length,
-            max_mismatches,
+            algorithm,
+            edit_distance,
             min_overlap,
         )?;
         
