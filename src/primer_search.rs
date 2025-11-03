@@ -1,12 +1,15 @@
-use bio::alignment::pairwise::Aligner;
+use bio::pattern_matching::myers::MyersBuilder;
+use bio::alignment::distance::simd;
 use anyhow;
+use crate::cli::Algorithm;
 
 /// Configuration for primer search
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
-    pub max_mismatches: usize,    // maximum allowed mismatches in primer sequence
+    pub algorithm: Algorithm,      // algorithm to use for matching
+    pub edit_distance: usize,    // maximum allowed edit distance in primer sequence
     pub window: usize,            // number of bases to search from each end
-    pub min_overlap: usize,       // minimum overlap length (like cutadapt -O)
+    pub min_overlap: usize,       // minimum overlap length
 }
 
 /// Result of a primer search
@@ -54,92 +57,133 @@ pub struct PairedPrimerSearchResult {
     pub needs_reverse_complement: bool,  // Whether read needs to be reverse complemented
 }
 
-/// Helper function to check if a base matches an IUPAC code
-fn matches_iupac(iupac: u8, base: u8) -> bool {
-    let iupac_upper = iupac.to_ascii_uppercase();
-    let base_upper = base.to_ascii_uppercase();
-    match iupac_upper {
-        b'A' => base_upper == b'A',
-        b'C' => base_upper == b'C',
-        b'G' => base_upper == b'G',
-        b'T' => base_upper == b'T',
-        b'R' => base_upper == b'A' || base_upper == b'G', // A or G
-        b'Y' => base_upper == b'C' || base_upper == b'T', // C or T
-        b'M' => base_upper == b'A' || base_upper == b'C', // A or C
-        b'K' => base_upper == b'G' || base_upper == b'T', // G or T
-        b'S' => base_upper == b'C' || base_upper == b'G', // C or G
-        b'W' => base_upper == b'A' || base_upper == b'T', // A or T
-        b'B' => base_upper == b'C' || base_upper == b'G' || base_upper == b'T', // not A
-        b'D' => base_upper == b'A' || base_upper == b'G' || base_upper == b'T', // not C
-        b'H' => base_upper == b'A' || base_upper == b'C' || base_upper == b'T', // not G
-        b'V' => base_upper == b'A' || base_upper == b'C' || base_upper == b'G', // not T
-        b'N' => true, // matches any base
-        _ => false, // unknown code, treat as mismatch
+/// Create a MyersBuilder configured with IUPAC ambiguity codes
+fn create_myers_builder() -> MyersBuilder {
+    let mut builder = MyersBuilder::new();
+    
+    // Configure IUPAC ambiguity codes
+    // Using Vec<u8> to handle variable length ambigs
+    let ambigs = vec![
+        (b'M', b"AC".to_vec()),
+        (b'R', b"AG".to_vec()),
+        (b'W', b"AT".to_vec()),
+        (b'S', b"CG".to_vec()),
+        (b'Y', b"CT".to_vec()),
+        (b'K', b"GT".to_vec()),
+        (b'V', b"ACGMRS".to_vec()),
+        (b'H', b"ACTMWY".to_vec()),
+        (b'D', b"AGTRWK".to_vec()),
+        (b'B', b"CGTSYK".to_vec()),
+        (b'N', b"ACGTMRWSYKVHDB".to_vec()),
+    ];
+    
+    for (base, equivalents) in ambigs {
+        builder.ambig(base, equivalents.as_slice());
     }
+    
+    builder
 }
 
-/// Find primer in read using semi-global alignment with IUPAC support
-fn find_primer(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
+/// Find primer in read using SIMD-accelerated edit distance
+fn find_primer_simd(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
     let region = &read[..window];
     
-    // Cutadapt-style scoring with IUPAC-aware matching
-    let mut aligner = Aligner::with_capacity(
-        primer.len(),
-        region.len(),
-        -1, // gap open
-        -1, // gap extend
-        |a, b| if matches_iupac(a, b) { 1 } else { -1 }, // IUPAC-aware
-    );
-    // Perform local alignment to find the best matching region (not just at position 0)
-    let alignment = aligner.local(primer.as_bytes(), region.as_bytes());
+    let primer_bytes = primer.as_bytes();
+    let region_bytes = region.as_bytes();
+    let min_overlap_len = cfg.min_overlap.min(primer.len());
     
-    // Calculate coverage in both sequences
-    let primer_coverage = alignment.xend - alignment.xstart;
-    let read_coverage = alignment.yend - alignment.ystart;
+    let mut best_match: Option<PrimerMatch> = None;
+    let mut best_distance = u32::MAX;
     
-    // Overlap is the maximum coverage between query (primer) and subject (read)
-    let overlap_len = primer_coverage.max(read_coverage);
-    
-    // Print the overlap length for debugging
-    println!("overlap_len: {}", overlap_len);
-    
-    // Check minimum overlap requirement
-    if overlap_len < cfg.min_overlap.min(primer.len()) {
-        return None;
-    }
-    
-    // Count mismatches by manually checking with IUPAC awareness
-    // Note: alignment.operations uses byte-level comparison, not our IUPAC-aware scoring
-    // So we must manually iterate through aligned positions
-    let compare_len = primer_coverage.min(read_coverage);
-    let mut mismatches = 0;
-    for i in 0..compare_len {
-        if !matches_iupac(primer.as_bytes()[alignment.xstart + i], region.as_bytes()[alignment.ystart + i]) {
-            mismatches += 1;
+    // Use sliding window approach with SIMD edit distance
+    // Try all possible positions in the region
+    for start in 0..=region.len().saturating_sub(min_overlap_len) {
+        // Try different end positions to find the best match
+        let max_end = (start + primer.len() + cfg.edit_distance).min(region.len());
+        for end in (start + min_overlap_len)..=max_end {
+            if end <= start {
+                continue;
+            }
+            
+            let region_slice = &region_bytes[start..end];
+            
+            // Calculate edit distance using SIMD (returns u32)
+            let distance = simd::levenshtein(primer_bytes, region_slice);
+            let edit_distance_u32 = cfg.edit_distance.min(u32::MAX as usize) as u32;
+            
+            if distance <= edit_distance_u32 && distance < best_distance {
+                let overlap_len = end - start;
+                if overlap_len >= min_overlap_len {
+                    best_match = Some(PrimerMatch {
+                        start,
+                        end,
+                        mismatches: distance as usize,
+                    });
+                    best_distance = distance;
+                }
+            }
         }
     }
     
-    // Debug: print the sequence being compared
-    println!("  DEBUG: Aligned sequences - primer[{}..{}]='{}' vs region[{}..{}]='{}'", 
-             alignment.xstart, alignment.xend,
-             &primer[alignment.xstart..alignment.xend.min(primer.len())],
-             alignment.ystart, alignment.yend,
-             &region[alignment.ystart..alignment.yend.min(region.len())]);
-    println!("  DEBUG: Alignment positions - primer starts at {}, region starts at {}, primer coverage={}, read coverage={}, alignment score={}", 
-             alignment.xstart, alignment.ystart, primer_coverage, read_coverage, alignment.score);
+    best_match
+}
+
+/// Find primer in read using Myers algorithm with IUPAC support
+fn find_primer_myers(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
+    // Search in the first 'window' bases
+    let window = cfg.window.min(read.len());
+    let region = &read[..window];
     
-    // Accept if mismatches are within allowed limit
-    if mismatches <= cfg.max_mismatches {
-        Some(PrimerMatch {
-            start: alignment.ystart,
-            end: alignment.yend,
-            mismatches,
-        })
-    } else {
-        println!("  → Rejected: {} mismatches (max allowed: {})", mismatches, cfg.max_mismatches);
-        None
+    // Convert to bytes for Myers algorithm
+    let primer_bytes = primer.as_bytes();
+    let region_bytes = region.as_bytes();
+    
+    // Create Myers matcher with IUPAC ambiguity support
+    let builder = create_myers_builder();
+    let mut myers = builder.build_64(primer_bytes);
+    
+    // Find all matches within the maximum edit distance
+    // Convert to u8, clamping at u8::MAX
+    let max_dist = cfg.edit_distance.min(u8::MAX as usize) as u8;
+    let matches: Vec<_> = myers.find_all_lazy(region_bytes, max_dist).collect();
+    
+    // Find best match (lowest distance)
+    let best_match = matches.iter()
+        .min_by_key(|&&(_, dist)| dist)
+        .and_then(|&(end_pos, edit_distance)| {
+            // Calculate start position
+            // Myers returns end positions (1-based in some contexts, but we use 0-based)
+            // For approximate matches, start position is approximately end_pos - primer_len + 1
+            let edit_dist = edit_distance as usize;
+            println!("edit_dist: {}", edit_dist);
+            let f_start = end_pos.saturating_sub(primer.len()) + 1;
+            let overlap_len = end_pos + 1 - f_start;
+            println!("overlap_len: {}", overlap_len);
+            
+            // Check minimum overlap requirement
+            let min_overlap_len = cfg.min_overlap.min(primer.len());
+            println!("min_overlap_len: {}", min_overlap_len);
+            if overlap_len >= min_overlap_len {
+                Some(PrimerMatch {
+                    start: f_start,
+                    end: end_pos,
+                    mismatches: edit_dist,
+                })
+            } else {
+                None
+            }
+        });
+    
+    best_match
+}
+
+/// Find primer in read using the selected algorithm
+fn find_primer(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
+    match cfg.algorithm {
+        Algorithm::Simd => find_primer_simd(cfg, read, primer),
+        Algorithm::Myers => find_primer_myers(cfg, read, primer),
     }
 }
 
@@ -155,9 +199,6 @@ fn find_primer_at_end(
     let search_len = search_length.min(read.len());
     // Extract the end region (last search_length bases)
     let end_region = &read[read.len() - search_len..];
-    
-    println!("  DEBUG: Searching primer '{}' in end region (last 100bp): '{}'", 
-             primer, if end_region.len() > 100 { &end_region[end_region.len()-100..] } else { end_region });
         
     // Perform semi-global alignment with IUPAC support
     if let Some(match_result) = find_primer(cfg, end_region, primer) {
@@ -187,13 +228,10 @@ pub fn search_paired_primers(
     let reverse_primer_rc = reverse_complement(reverse_primer);
     
     // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
-    println!("Trying Scenario 1: Forward primer at start...");
+    println!("Trying Scenario 1: Forward primer at start, reverse complement of reverse primer at end");
     if let Some(forward_match) = find_primer(cfg, read, forward_primer) {
-        println!("  → Forward primer found at start (mismatches: {})", forward_match.mismatches);
-        println!("  → Now searching for Rev-RC at end...");
         if let Some(reverse_match) = find_primer_at_end(cfg, read, &reverse_primer_rc, search_length) {
-            println!("  → Rev-RC found at end (mismatches: {})", reverse_match.mismatches);
-            println!(" ✅ Scenario 1 ACCEPTED: Forward orientation (Fwd at start, Rev-RC at end)");
+            println!("✅ Scenario 1 PASSED: Found both primers");
             return PairedPrimerSearchResult {
                 found: true,
                 trim_start: forward_match.end,
@@ -201,23 +239,20 @@ pub fn search_paired_primers(
                 needs_reverse_complement: false,
             };
         } else {
-            println!("  ✗ Rev-RC NOT found at end");
+            println!("❌ Scenario 1 FAILED: Forward primer found, but reverse complement of reverse primer not found at end");
         }
     } else {
-        println!("  ✗ Forward primer NOT found at start");
+        println!("❌ Scenario 1 FAILED: Forward primer not found at start");
     }
     
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
     // Search in original read - trim positions are in original read coordinates
     // After trimming, the amplicon will be reverse complemented
-    println!("Trying Scenario 2: Reverse primer at start...");
+    println!("Trying Scenario 2: Reverse primer at start, reverse complement of forward primer at end");
     if let Some(reverse_match) = find_primer(cfg, read, reverse_primer) {
-        println!("  → Reverse primer found at start (mismatches: {})", reverse_match.mismatches);
-        println!("  → Now searching for Fwd-RC at end...");
         if let Some(forward_match) = find_primer_at_end(cfg, read, &forward_primer_rc, search_length) {
             // Trim coordinates are in original read: trim from reverse_match.end to forward_match.start
-            println!("  → Fwd-RC found at end (mismatches: {})", forward_match.mismatches);
-            println!(" ✅ Scenario 2 ACCEPTED: Reverse orientation (Rev at start, Fwd-RC at end) - will reverse complement");
+            println!("✅ Scenario 2 PASSED: Found both primers (will reverse complement)");
             return PairedPrimerSearchResult {
                 found: true,
                 trim_start: reverse_match.end,      // Start keeping after reverse primer
@@ -225,14 +260,14 @@ pub fn search_paired_primers(
                 needs_reverse_complement: true,
             };
         } else {
-            println!("  ✗ Fwd-RC NOT found at end");
+            println!("❌ Scenario 2 FAILED: Reverse primer found, but reverse complement of forward primer not found at end");
         }
     } else {
-        println!("  ✗ Reverse primer NOT found at start");
+        println!("❌ Scenario 2 FAILED: Reverse primer not found at start");
     }
     
     // Not found
-    println!("❌ No primers found: Both scenarios failed");
+    println!("❌ Both scenarios FAILED: No primers found");
     PairedPrimerSearchResult {
         found: false,
         trim_start: 0,
@@ -256,7 +291,8 @@ impl PrimerMatcher {
         forward_primer: String,
         reverse_primer: String,
         search_length: usize,
-        max_mismatches: usize,
+        algorithm: Algorithm,
+        edit_distance: usize,
         min_overlap: usize,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -264,7 +300,8 @@ impl PrimerMatcher {
             reverse_primer,
             search_length,
             config: SearchConfig {
-                max_mismatches,
+                algorithm,
+                edit_distance,
                 window: search_length,
                 min_overlap,
             },
