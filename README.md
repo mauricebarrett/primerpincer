@@ -1,4 +1,4 @@
-# 🦀 PrimerPincer🦀
+# 🦀 PrimerPincer 🦀
 
 **Blazingly fast and accurate tool for trimming primers from FASTQ files derived from long-read sequencing (ONT & PacBio).**
 
