@@ -1,13 +1,15 @@
-use paraseq::prelude::*;
+use crate::cli::Algorithm;
+use crate::preparing_input::PrimerSet;
+use crate::primer_search::PrecompiledMyersPatterns;
+use crate::primer_trim::PrimerTrimmer;
+use flate2::Compression;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
 use paraseq::fastx;
+use paraseq::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::Path;
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
-use crate::primer_trim::PrimerTrimmer;
-use crate::cli::Algorithm;
 
 /// Process FASTQ file with parallel primer trimming
 /// Handles both compressed (.gz) and uncompressed FASTQ files
@@ -19,6 +21,7 @@ pub fn process_fastq(
     search_length: usize,
     algorithm: Algorithm,
     edit_distance: usize,
+    max_mismatch: usize,
     min_overlap: usize,
     threads: usize,
 ) -> anyhow::Result<()> {
@@ -26,42 +29,55 @@ pub fn process_fastq(
     if let Some(parent) = Path::new(output_path).parent() {
         std::fs::create_dir_all(parent)?;
     }
-    
-    // Open input FASTQ file and handle compression based on extension
-    let input_file = File::open(input_path)?;
-    
-    // Open output FASTQ file - compress if extension is .gz
+
+    // Open output FASTQ file and wrap with gzip encoder if needed
     let output_file = File::create(output_path)?;
     let output: Box<dyn Write + Send> = if output_path.ends_with(".gz") {
-        // Gzip compress the output
-        Box::new(GzEncoder::new(output_file, Compression::default()))
+        Box::new(GzEncoder::new(output_file, Compression::fast()))
     } else {
-        // Plain text output
         Box::new(output_file)
     };
-    
-    // Create processor
+
+    let primers = PrimerSet::new(forward_primer.to_string(), reverse_primer.to_string());
+
+    // Pre-compile Myers patterns if using Myers algorithm (before processing starts)
+    let myers_patterns = if matches!(algorithm, Algorithm::Myers) {
+        eprintln!("🔧 Pre-building Myers patterns for primers...");
+        Some(PrecompiledMyersPatterns::from_primer_set(&primers))
+    } else {
+        None
+    };
+
+    eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
+
+    // Create processor with pre-built patterns
     let mut processor = PrimerTrimmer::new(
         output,
-        forward_primer.to_string(),
-        reverse_primer.to_string(),
+        primers,
         search_length,
         algorithm,
         edit_distance,
+        max_mismatch,
         min_overlap,
+        myers_patterns,
     )?;
-    
-    // Process in parallel - handle compressed and uncompressed files
+
+    // Open input FASTQ file and handle decompression
+    let input_file = File::open(input_path)?;
+
+    // Process based on file format
     if input_path.ends_with(".gz") {
-        // Gzip compressed file
         let decoder = GzDecoder::new(input_file);
-        let reader = fastx::Reader::new(BufReader::new(decoder))?;
+        // Use 256KB buffer for better decompression efficiency and fewer syscalls
+        let buffered = BufReader::with_capacity(256 * 1024, decoder);
+        let reader = fastx::Reader::new(buffered)?;
         reader.process_parallel(&mut processor, threads)?;
     } else {
-        // Uncompressed file
-        let reader = fastx::Reader::new(BufReader::new(input_file))?;
+        // Use 256KB buffer for better I/O throughput and fewer syscalls
+        let buffered = BufReader::with_capacity(256 * 1024, input_file);
+        let reader = fastx::Reader::new(buffered)?;
         reader.process_parallel(&mut processor, threads)?;
     }
-    
+
     Ok(())
 }

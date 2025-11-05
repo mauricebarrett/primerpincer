@@ -1,23 +1,27 @@
-use crate::primer_search::{PrimerMatcher, PairedPrimerSearchResult, reverse_complement};
 use crate::cli::Algorithm;
-use paraseq::parallel::{ParallelProcessor, IntoProcessError};
-use paraseq::Record;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
+use crate::preparing_input::{PrimerSet, reverse_complement};
+use crate::primer_search::{PairedPrimerSearchResult, PrecompiledMyersPatterns, PrimerMatcher};
 use anyhow;
+use paraseq::Record;
+use paraseq::parallel::{IntoProcessError, ParallelProcessor};
+use std::borrow::Cow;
+use std::io::Write;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Trim sequence and quality based on search result
 /// Handles reverse complementing if needed (after trimming)
 /// Returns (trimmed_sequence, trimmed_quality) if trimming is successful, None otherwise
-fn trim_sequence(
-    seq: &str,
-    qual: &str,
+/// Uses Cow<str> to avoid allocations when reverse complementing isn't needed
+fn trim_sequence<'a>(
+    seq: &'a str,
+    qual: &'a str,
     result: &PairedPrimerSearchResult,
-) -> Option<(String, String)> {
+) -> Option<(Cow<'a, str>, Cow<'a, str>)> {
     if !result.found {
         return None;
     }
-    
+
     // Trim from both ends first (using original read coordinates)
     // trim_start: position to start keeping (trim everything before this)
     // trim_end: position to stop keeping (trim everything from this position to end)
@@ -25,24 +29,30 @@ fn trim_sequence(
         // Invalid trimming coordinates
         return None;
     }
-    
+
     // Ensure we have valid trim coordinates
     let trim_end = result.trim_end.min(seq.len());
     if trim_end <= result.trim_start {
         return None; // Invalid or empty result
     }
-    
+
     // Trim the sequence and quality
     let trimmed_seq = &seq[result.trim_start..trim_end];
     let trimmed_qual = qual.get(result.trim_start..trim_end)?; // Returns None if out of bounds
-    
+
     // Reverse complement the trimmed amplicon if needed
     if result.needs_reverse_complement {
         let seq_rc = reverse_complement(trimmed_seq);
-        let qual_rc = trimmed_qual.chars().rev().collect::<String>();
-        Some((seq_rc, qual_rc))
+        // Optimize quality reversal: FASTQ quality is ASCII-only, so use byte operations
+        // This is faster than .chars().rev() which requires UTF-8 decoding
+        let mut qual_bytes = trimmed_qual.as_bytes().to_vec();
+        qual_bytes.reverse();
+        // Safe because FASTQ quality is always valid ASCII
+        let qual_rc = unsafe { String::from_utf8_unchecked(qual_bytes) };
+        Some((Cow::Owned(seq_rc), Cow::Owned(qual_rc)))
     } else {
-        Some((trimmed_seq.to_string(), trimmed_qual.to_string()))
+        // Zero-copy: just borrow the slices without allocating
+        Some((Cow::Borrowed(trimmed_seq), Cow::Borrowed(trimmed_qual)))
     }
 }
 
@@ -58,22 +68,24 @@ pub struct PrimerTrimmer {
 impl PrimerTrimmer {
     pub fn new(
         output: Box<dyn Write + Send>,
-        forward_primer: String,
-        reverse_primer: String,
+        primers: PrimerSet,
         search_length: usize,
         algorithm: Algorithm,
         edit_distance: usize,
+        max_mismatch: usize,
         min_overlap: usize,
+        myers_patterns: Option<PrecompiledMyersPatterns>,
     ) -> anyhow::Result<Self> {
         let matcher = PrimerMatcher::new(
-            forward_primer,
-            reverse_primer,
+            primers,
             search_length,
             algorithm,
             edit_distance,
+            max_mismatch,
             min_overlap,
+            myers_patterns,
         )?;
-        
+
         Ok(Self {
             matcher,
             local_output: String::new(),
@@ -87,25 +99,24 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
         // Convert sequence and quality to &str (keep bindings for lifetime)
         let seq_bytes = record.seq();
         let seq = std::str::from_utf8(&seq_bytes).map_err(|e| e.into_process_error())?;
-        let qual_bytes = record.qual().ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
+        let qual_bytes = record
+            .qual()
+            .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
         let qual = std::str::from_utf8(qual_bytes).map_err(|e| e.into_process_error())?;
-        
+
         // Search for paired primers and trim if found
         let search_result = self.matcher.search_primers(seq);
-        
+
         if let Some((trimmed_seq, trimmed_qual)) = trim_sequence(seq, qual, &search_result) {
             // Write trimmed record to local buffer
             use std::fmt::Write;
             writeln!(self.local_output, "@{}", record.id_str())
                 .map_err(|e| e.into_process_error())?;
-            writeln!(self.local_output, "{}", trimmed_seq)
-                .map_err(|e| e.into_process_error())?;
-            writeln!(self.local_output, "+")
-                .map_err(|e| e.into_process_error())?;
-            writeln!(self.local_output, "{}", trimmed_qual)
-                .map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "{}", trimmed_seq).map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "+").map_err(|e| e.into_process_error())?;
+            writeln!(self.local_output, "{}", trimmed_qual).map_err(|e| e.into_process_error())?;
         }
-        
+
         Ok(())
     }
 

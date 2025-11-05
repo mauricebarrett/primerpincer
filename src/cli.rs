@@ -3,15 +3,19 @@ use clap::{Parser, ValueEnum};
 /// Algorithm selection for primer matching
 #[derive(ValueEnum, Clone, Debug, Copy)]
 pub enum Algorithm {
-    /// Use SIMD-accelerated edit distance calculation
-    Simd,
+    /// Use standard Levenshtein edit distance calculation
+    Levenshtein,
     /// Use Myers algorithm with IUPAC support
     Myers,
+    /// Use local pairwise alignment with IUPAC-aware scoring
+    Local,
+    /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
+    Sassy,
 }
 
 impl Default for Algorithm {
     fn default() -> Self {
-        Algorithm::Simd
+        Algorithm::Sassy
     }
 }
 
@@ -55,8 +59,8 @@ pub struct Cli {
         short = 'a',
         long = "algorithm",
         value_enum,
-        help = "Algorithm to use for primer matching: simd (default) or myers",
-        default_value_t = Algorithm::Myers
+        help = "Algorithm to use for primer matching: levenshtein, myers, local, or sassy",
+        default_value_t = Algorithm::Sassy
     )]
     pub algorithm: Algorithm,
 
@@ -69,6 +73,16 @@ pub struct Cli {
         default_value_t = 3
     )]
     pub edit_distance: usize,
+
+    /// Maximum number of mismatches allowed in local alignment
+    #[arg(
+        short = 'm',
+        long = "max-mismatch",
+        value_name = "INT",
+        help = "Maximum mismatches allowed when using the local alignment algorithm",
+        default_value_t = 3
+    )]
+    pub max_mismatch: usize,
 
     #[arg(
         short = 'l',
