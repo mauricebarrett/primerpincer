@@ -7,8 +7,9 @@ use flate2::write::GzEncoder;
 use paraseq::fastx;
 use paraseq::prelude::*;
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::{BufReader, Write, Read};
 use std::path::Path;
+use std::time::Instant;
 
 /// Process FASTQ file with parallel primer trimming
 /// Handles both compressed (.gz) and uncompressed FASTQ files
@@ -36,6 +37,7 @@ pub fn process_fastq(
         Box::new(output_file)
     };
 
+    let setup_start = Instant::now();
     let primers = PrimerSet::new(forward_primer.to_string(), reverse_primer.to_string());
 
     eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
@@ -50,22 +52,42 @@ pub fn process_fastq(
         min_overlap,
     )?;
 
-    // Open input FASTQ file and handle decompression
+    // Peek at the file to detect compression using magic bytes
+    let mut peek_buf = [0u8; 2];
+    let mut temp_file = File::open(input_path)?;
+    let bytes_read = temp_file.read(&mut peek_buf)?;
+    
+    // Detect compression format based on magic bytes
+    // Gzip files start with 0x1f 0x8b
+    let is_gzip = bytes_read >= 2 && peek_buf[0] == 0x1f && peek_buf[1] == 0x8b;
+    
+    let format_name = if is_gzip { "gzip" } else { "uncompressed" };
+    eprintln!("📂 Detected format: {}", format_name);
+    
+    let setup_time = setup_start.elapsed();
+    eprintln!("⏱️  Setup time: {:.2}s", setup_time.as_secs_f64());
+    
+    // Open fresh file handle for reading and process with appropriate decompression
+    let processing_start = Instant::now();
     let input_file = File::open(input_path)?;
-
-    // Process based on file format
-    if input_path.ends_with(".gz") {
+    
+    if is_gzip {
         let decoder = GzDecoder::new(input_file);
-        // Use 256KB buffer for better decompression efficiency and fewer syscalls
         let buffered = BufReader::with_capacity(256 * 1024, decoder);
         let reader = fastx::Reader::new(buffered)?;
         reader.process_parallel(&mut processor, threads)?;
     } else {
-        // Use 256KB buffer for better I/O throughput and fewer syscalls
+        // For uncompressed files, read directly
         let buffered = BufReader::with_capacity(256 * 1024, input_file);
         let reader = fastx::Reader::new(buffered)?;
         reader.process_parallel(&mut processor, threads)?;
     }
+    
+    let processing_time = processing_start.elapsed();
+    eprintln!("⏱️  Total processing time: {:.2}s", processing_time.as_secs_f64());
+    
+    // Print detailed timing statistics from the processor
+    processor.print_timing_stats();
 
     Ok(())
 }

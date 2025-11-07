@@ -3,8 +3,8 @@ use clap::{Parser, ValueEnum};
 /// Algorithm selection for primer matching
 #[derive(ValueEnum, Clone, Debug, Copy)]
 pub enum Algorithm {
-    /// Use standard Levenshtein edit distance calculation
-    Levenshtein,
+    /// Use Myers bit-parallel algorithm for approximate matching
+    Myers,
     /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
     Sassy,
 }
@@ -55,7 +55,7 @@ pub struct Cli {
         short = 'a',
         long = "algorithm",
         value_enum,
-        help = "Algorithm to use for primer matching: levenshtein or sassy",
+        help = "Algorithm to use for primer matching: myers or sassy",
         default_value_t = Algorithm::Sassy
     )]
     pub algorithm: Algorithm,

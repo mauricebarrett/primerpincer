@@ -1,8 +1,6 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::PrimerSet;
-use crate::search_algos::{
-    PrimerMatch, find_primer,
-};
+use crate::search_algos::{PrimerMatch, find_primer};
 use anyhow;
 
 /// Configuration for primer search

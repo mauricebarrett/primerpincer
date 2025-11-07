@@ -8,6 +8,8 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 /// Trim sequence and quality based on search result
 /// Handles reverse complementing if needed (after trimming)
@@ -56,6 +58,65 @@ fn trim_sequence<'a>(
     }
 }
 
+/// Timing statistics shared across all threads
+#[derive(Debug)]
+struct TimingStats {
+    search_time_ns: AtomicU64,
+    trim_time_ns: AtomicU64,
+    io_time_ns: AtomicU64,
+    records_processed: AtomicU64,
+    records_trimmed: AtomicU64,
+}
+
+impl TimingStats {
+    fn new() -> Self {
+        Self {
+            search_time_ns: AtomicU64::new(0),
+            trim_time_ns: AtomicU64::new(0),
+            io_time_ns: AtomicU64::new(0),
+            records_processed: AtomicU64::new(0),
+            records_trimmed: AtomicU64::new(0),
+        }
+    }
+
+    fn add_search_time(&self, nanos: u64) {
+        self.search_time_ns.fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    fn add_trim_time(&self, nanos: u64) {
+        self.trim_time_ns.fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    fn add_io_time(&self, nanos: u64) {
+        self.io_time_ns.fetch_add(nanos, Ordering::Relaxed);
+    }
+
+    fn increment_processed(&self) {
+        self.records_processed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn increment_trimmed(&self) {
+        self.records_trimmed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn print_stats(&self) {
+        let search_s = self.search_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+        let trim_s = self.trim_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+        let io_s = self.io_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
+        let processed = self.records_processed.load(Ordering::Relaxed);
+        let trimmed = self.records_trimmed.load(Ordering::Relaxed);
+
+        eprintln!("\n📊 Performance Statistics:");
+        eprintln!("   Records processed: {}", processed);
+        eprintln!("   Records trimmed: {} ({:.1}%)", trimmed, (trimmed as f64 / processed as f64 * 100.0));
+        eprintln!("\n⏱️  Time Breakdown (cumulative across all threads):");
+        eprintln!("   Primer searching: {:.2}s ({:.1}%)", search_s, search_s / (search_s + trim_s + io_s) * 100.0);
+        eprintln!("   Sequence trimming: {:.2}s ({:.1}%)", trim_s, trim_s / (search_s + trim_s + io_s) * 100.0);
+        eprintln!("   I/O operations: {:.2}s ({:.1}%)", io_s, io_s / (search_s + trim_s + io_s) * 100.0);
+        eprintln!("   Total accounted: {:.2}s", search_s + trim_s + io_s);
+    }
+}
+
 /// Processor for trimming primers from FASTQ records
 /// Implements ParallelProcessor for use with paraseq parallel processing
 #[derive(Clone)]
@@ -63,6 +124,7 @@ pub struct PrimerTrimmer {
     matcher: PrimerMatcher,
     local_output: String,
     global_output: Arc<Mutex<Box<dyn Write + Send>>>,
+    timing_stats: Arc<TimingStats>,
 }
 
 impl PrimerTrimmer {
@@ -74,19 +136,19 @@ impl PrimerTrimmer {
         error_rate: f64,
         min_overlap: usize,
     ) -> anyhow::Result<Self> {
-        let matcher = PrimerMatcher::new(
-            primers,
-            search_length,
-            algorithm,
-            error_rate,
-            min_overlap,
-        )?;
+        let matcher =
+            PrimerMatcher::new(primers, search_length, algorithm, error_rate, min_overlap)?;
 
         Ok(Self {
             matcher,
             local_output: String::new(),
             global_output: Arc::new(Mutex::new(output)),
+            timing_stats: Arc::new(TimingStats::new()),
         })
+    }
+
+    pub fn print_timing_stats(&self) {
+        self.timing_stats.print_stats();
     }
 }
 
@@ -100,27 +162,42 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
             .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
         let qual = std::str::from_utf8(qual_bytes).map_err(|e| e.into_process_error())?;
 
-        // Search for paired primers and trim if found
+        // Time primer searching
+        let search_start = Instant::now();
         let search_result = self.matcher.search_primers(seq);
+        self.timing_stats.add_search_time(search_start.elapsed().as_nanos() as u64);
+        
+        self.timing_stats.increment_processed();
 
-        if let Some((trimmed_seq, trimmed_qual)) = trim_sequence(seq, qual, &search_result) {
-            // Write trimmed record to local buffer
+        // Time trimming operations
+        let trim_start = Instant::now();
+        let trimmed = trim_sequence(seq, qual, &search_result);
+        self.timing_stats.add_trim_time(trim_start.elapsed().as_nanos() as u64);
+
+        if let Some((trimmed_seq, trimmed_qual)) = trimmed {
+            self.timing_stats.increment_trimmed();
+            
+            // Time I/O operations (writing to local buffer)
+            let io_start = Instant::now();
             use std::fmt::Write;
             writeln!(self.local_output, "@{}", record.id_str())
                 .map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "{}", trimmed_seq).map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "+").map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "{}", trimmed_qual).map_err(|e| e.into_process_error())?;
+            self.timing_stats.add_io_time(io_start.elapsed().as_nanos() as u64);
         }
 
         Ok(())
     }
 
     fn on_batch_complete(&mut self) -> paraseq::parallel::Result<()> {
+        let io_start = Instant::now();
         let mut global_out = self.global_output.lock().unwrap();
         global_out.write_all(self.local_output.as_bytes())?;
         global_out.flush()?;
         self.local_output.clear();
+        self.timing_stats.add_io_time(io_start.elapsed().as_nanos() as u64);
         Ok(())
     }
 }
