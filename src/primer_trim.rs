@@ -1,6 +1,6 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::{PrimerSet, reverse_complement};
-use crate::primer_search::{PairedPrimerSearchResult, PrecompiledMyersPatterns, PrimerMatcher};
+use crate::primer_search::{PairedPrimerSearchResult, PrimerMatcher};
 use anyhow;
 use paraseq::Record;
 use paraseq::parallel::{IntoProcessError, ParallelProcessor};
@@ -71,19 +71,15 @@ impl PrimerTrimmer {
         primers: PrimerSet,
         search_length: usize,
         algorithm: Algorithm,
-        edit_distance: usize,
-        max_mismatch: usize,
+        error_rate: f64,
         min_overlap: usize,
-        myers_patterns: Option<PrecompiledMyersPatterns>,
     ) -> anyhow::Result<Self> {
         let matcher = PrimerMatcher::new(
             primers,
             search_length,
             algorithm,
-            edit_distance,
-            max_mismatch,
+            error_rate,
             min_overlap,
-            myers_patterns,
         )?;
 
         Ok(Self {

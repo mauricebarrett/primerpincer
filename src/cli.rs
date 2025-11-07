@@ -5,10 +5,6 @@ use clap::{Parser, ValueEnum};
 pub enum Algorithm {
     /// Use standard Levenshtein edit distance calculation
     Levenshtein,
-    /// Use Myers algorithm with IUPAC support
-    Myers,
-    /// Use local pairwise alignment with IUPAC-aware scoring
-    Local,
     /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
     Sassy,
 }
@@ -59,30 +55,20 @@ pub struct Cli {
         short = 'a',
         long = "algorithm",
         value_enum,
-        help = "Algorithm to use for primer matching: levenshtein, myers, local, or sassy",
+        help = "Algorithm to use for primer matching: levenshtein or sassy",
         default_value_t = Algorithm::Sassy
     )]
     pub algorithm: Algorithm,
 
-    /// Maximum allowed edit distance in primer matching
+    /// Maximum allowed error rate in primer matching (errors / alignment_length)
     #[arg(
         short = 'e',
-        long = "edit-distance",
-        value_name = "INT",
-        help = "Maximum allowed edit distance in primer matching",
-        default_value_t = 3
+        long = "error-rate",
+        value_name = "FLOAT",
+        help = "Maximum error rate in primer matching (e.g., 0.15 for 15% errors)",
+        default_value_t = 0.15
     )]
-    pub edit_distance: usize,
-
-    /// Maximum number of mismatches allowed in local alignment
-    #[arg(
-        short = 'm',
-        long = "max-mismatch",
-        value_name = "INT",
-        help = "Maximum mismatches allowed when using the local alignment algorithm",
-        default_value_t = 3
-    )]
-    pub max_mismatch: usize,
+    pub error_rate: f64,
 
     #[arg(
         short = 'l',

@@ -1,6 +1,5 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::PrimerSet;
-use crate::primer_search::PrecompiledMyersPatterns;
 use crate::primer_trim::PrimerTrimmer;
 use flate2::Compression;
 use flate2::read::GzDecoder;
@@ -20,8 +19,7 @@ pub fn process_fastq(
     reverse_primer: &str,
     search_length: usize,
     algorithm: Algorithm,
-    edit_distance: usize,
-    max_mismatch: usize,
+    error_rate: f64,
     min_overlap: usize,
     threads: usize,
 ) -> anyhow::Result<()> {
@@ -40,26 +38,16 @@ pub fn process_fastq(
 
     let primers = PrimerSet::new(forward_primer.to_string(), reverse_primer.to_string());
 
-    // Pre-compile Myers patterns if using Myers algorithm (before processing starts)
-    let myers_patterns = if matches!(algorithm, Algorithm::Myers) {
-        eprintln!("🔧 Pre-building Myers patterns for primers...");
-        Some(PrecompiledMyersPatterns::from_primer_set(&primers))
-    } else {
-        None
-    };
-
     eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
 
-    // Create processor with pre-built patterns
+    // Create processor
     let mut processor = PrimerTrimmer::new(
         output,
         primers,
         search_length,
         algorithm,
-        edit_distance,
-        max_mismatch,
+        error_rate,
         min_overlap,
-        myers_patterns,
     )?;
 
     // Open input FASTQ file and handle decompression

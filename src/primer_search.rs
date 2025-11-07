@@ -1,17 +1,15 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::PrimerSet;
 use crate::search_algos::{
-    PrimerMatch, build_myers_pattern, find_primer, find_primer_myers_precompiled,
+    PrimerMatch, find_primer,
 };
 use anyhow;
-use bio::pattern_matching::myers::Myers;
 
 /// Configuration for primer search
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
     pub algorithm: Algorithm, // algorithm to use for matching
-    pub edit_distance: usize, // maximum allowed edit distance in primer sequence
-    pub max_mismatch: usize,  // maximum allowed mismatches for local alignment
+    pub error_rate: f64,      // maximum allowed error rate (errors / alignment_length)
     pub window: usize,        // number of bases to search from each end
     pub min_overlap: usize,   // minimum overlap length
 }
@@ -23,36 +21,6 @@ pub struct PairedPrimerSearchResult {
     pub trim_start: usize,              // Position to trim from start
     pub trim_end: usize,                // Position to trim from end (from 3' end)
     pub needs_reverse_complement: bool, // Whether read needs to be reverse complemented
-}
-
-/// Precompiled Myers patterns for all 4 primers
-/// Designed to be cloned into each worker thread for zero-lock access
-#[derive(Clone)]
-pub struct PrecompiledMyersPatterns {
-    pub forward: Myers<u64>,
-    pub reverse: Myers<u64>,
-    pub forward_rc: Myers<u64>,
-    pub reverse_rc: Myers<u64>,
-    pub forward_len: usize,
-    pub reverse_len: usize,
-    pub forward_rc_len: usize,
-    pub reverse_rc_len: usize,
-}
-
-impl PrecompiledMyersPatterns {
-    /// Build precompiled Myers patterns from a PrimerSet
-    pub fn from_primer_set(primers: &PrimerSet) -> Self {
-        Self {
-            forward: build_myers_pattern(&primers.forward),
-            reverse: build_myers_pattern(&primers.reverse),
-            forward_rc: build_myers_pattern(&primers.forward_rc),
-            reverse_rc: build_myers_pattern(&primers.reverse_rc),
-            forward_len: primers.forward.len(),
-            reverse_len: primers.reverse.len(),
-            forward_rc_len: primers.forward_rc.len(),
-            reverse_rc_len: primers.reverse_rc.len(),
-        }
-    }
 }
 
 /// Search for primer at the end of a read (last search_length bases)
@@ -78,85 +46,6 @@ fn find_primer_at_end(
         })
     } else {
         None
-    }
-}
-
-/// Search for primer at the end using precompiled Myers pattern
-fn find_primer_at_end_myers(
-    cfg: &SearchConfig,
-    read: &str,
-    myers: &mut Myers<u64>,
-    primer_len: usize,
-    search_length: usize,
-) -> Option<PrimerMatch> {
-    let search_len = search_length.min(read.len());
-    let end_region = &read[read.len() - search_len..];
-
-    if let Some(match_result) = find_primer_myers_precompiled(cfg, end_region, myers, primer_len) {
-        let offset = read.len() - search_len;
-        Some(PrimerMatch {
-            start: offset + match_result.start,
-            end: offset + match_result.end,
-        })
-    } else {
-        None
-    }
-}
-
-/// Search for paired primers using precompiled Myers patterns
-/// Each thread has its own mutable copy of patterns (no cloning needed)
-fn search_paired_primers_myers(
-    cfg: &SearchConfig,
-    read: &str,
-    patterns: &mut PrecompiledMyersPatterns,
-    search_length: usize,
-) -> PairedPrimerSearchResult {
-    // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
-    if let Some(forward_match) =
-        find_primer_myers_precompiled(cfg, read, &mut patterns.forward, patterns.forward_len)
-    {
-        if let Some(reverse_match) = find_primer_at_end_myers(
-            cfg,
-            read,
-            &mut patterns.reverse_rc,
-            patterns.reverse_rc_len,
-            search_length,
-        ) {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: forward_match.end,
-                trim_end: reverse_match.start,
-                needs_reverse_complement: false,
-            };
-        }
-    }
-
-    // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
-    if let Some(reverse_match) =
-        find_primer_myers_precompiled(cfg, read, &mut patterns.reverse, patterns.reverse_len)
-    {
-        if let Some(forward_match) = find_primer_at_end_myers(
-            cfg,
-            read,
-            &mut patterns.forward_rc,
-            patterns.forward_rc_len,
-            search_length,
-        ) {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: reverse_match.end,
-                trim_end: forward_match.start,
-                needs_reverse_complement: true,
-            };
-        }
-    }
-
-    // Not found
-    PairedPrimerSearchResult {
-        found: false,
-        trim_start: 0,
-        trim_end: 0,
-        needs_reverse_complement: false,
     }
 }
 
@@ -216,8 +105,6 @@ pub struct PrimerMatcher {
     primers: PrimerSet,
     search_length: usize,
     config: SearchConfig,
-    /// Patterns are cloned into each thread - no locks needed
-    myers_patterns: Option<PrecompiledMyersPatterns>,
 }
 
 impl PrimerMatcher {
@@ -226,42 +113,23 @@ impl PrimerMatcher {
         primers: PrimerSet,
         search_length: usize,
         algorithm: Algorithm,
-        edit_distance: usize,
-        max_mismatch: usize,
+        error_rate: f64,
         min_overlap: usize,
-        myers_patterns: Option<PrecompiledMyersPatterns>,
     ) -> anyhow::Result<Self> {
-        // Use provided patterns or build them on the fly (for backward compatibility)
-        let myers_patterns = myers_patterns.or_else(|| {
-            if matches!(algorithm, Algorithm::Myers) {
-                Some(PrecompiledMyersPatterns::from_primer_set(&primers))
-            } else {
-                None
-            }
-        });
-
         Ok(Self {
             primers,
             search_length,
             config: SearchConfig {
                 algorithm,
-                edit_distance,
-                max_mismatch,
+                error_rate,
                 window: search_length,
                 min_overlap,
             },
-            myers_patterns,
         })
     }
 
     /// Search for paired primers in a sequence
-    /// Takes &mut self to allow mutable access to Myers patterns (no cloning needed)
-    pub fn search_primers(&mut self, seq: &str) -> PairedPrimerSearchResult {
-        // Use precompiled Myers patterns if available
-        if let Some(ref mut patterns) = self.myers_patterns {
-            search_paired_primers_myers(&self.config, seq, patterns, self.search_length)
-        } else {
-            search_paired_primers(&self.config, seq, &self.primers, self.search_length)
-        }
+    pub fn search_primers(&self, seq: &str) -> PairedPrimerSearchResult {
+        search_paired_primers(&self.config, seq, &self.primers, self.search_length)
     }
 }

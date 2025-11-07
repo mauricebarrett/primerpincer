@@ -21,8 +21,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Forward primer: {}", args.forward_primer);
     eprintln!("Reverse primer: {}", args.reverse_primer);
     eprintln!("Algorithm: {:?}", args.algorithm);
-    eprintln!("Allowed edit distance: {}", args.edit_distance);
-    eprintln!("Maximum mismatches: {}", args.max_mismatch);
+    eprintln!("Maximum error rate: {:.1}%", args.error_rate * 100.0);
     eprintln!("Search length: {}", args.search_length);
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
@@ -35,8 +34,7 @@ fn main() -> anyhow::Result<()> {
         &args.reverse_primer,
         args.search_length,
         args.algorithm,
-        args.edit_distance,
-        args.max_mismatch,
+        args.error_rate,
         args.overlap,
         args.threads,
     )?;
