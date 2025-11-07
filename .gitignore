@@ -2,15 +2,16 @@
 .pixi/*
 !.pixi/config.toml
 
-
 # Added by cargo
-
 /target
 
 # Project specific ignores
 /example_data/
 
-
 setup.sh
 
 example_data/cutadapt/ATCC-MSA1003-toy-example.fastq.gz
+
+# Node.js
+node_modules/
+package-lock.json
