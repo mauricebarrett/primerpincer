@@ -38,7 +38,7 @@ pub fn process_fastq(
     };
 
     let setup_start = Instant::now();
-    let primers = PrimerSet::new(forward_primer.to_string(), reverse_primer.to_string());
+    let primers = PrimerSet::new(forward_primer, reverse_primer);
 
     eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
 

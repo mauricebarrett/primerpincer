@@ -74,7 +74,9 @@ pub struct PrimerSet {
 }
 
 impl PrimerSet {
-    pub fn new(forward: String, reverse: String) -> Self {
+    pub fn new(forward: impl Into<String>, reverse: impl Into<String>) -> Self {
+        let forward = forward.into();
+        let reverse = reverse.into();
         let forward_rc = reverse_complement(&forward);
         let reverse_rc = reverse_complement(&reverse);
 

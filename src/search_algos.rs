@@ -4,9 +4,9 @@
 //! primer sequences within reads. Each search algorithm returns an `Option<PrimerMatch>`
 //! to `search_paired_primers` where:
 //! - `Some(PrimerMatch)` indicates a match was found with the best match details.
-//!   The `PrimerMatch` contains `start` and `end` coordinates (0-based) that are used
+//!   The `PrimerMatch` contains `start` and `end` positions (0-based) that are used
 //!   by `search_paired_primers` to determine trim positions for removing primers from reads.
-//!   The coordinates indicate where the primer was found in the read sequence.
+//!   The positions indicate where the primer was found in the read sequence.
 //! - `None` indicates no match was found within the specified constraints.
 //!
 //! The search algorithms return the same type (`PrimerMatch`) and can be used
@@ -47,7 +47,7 @@ static MYERS_BUILDER: Lazy<MyersBuilder> = Lazy::new(|| {
 });
 
 /// Result of a primer search
-/// Contains the coordinates where a primer was found in a read sequence
+/// Contains the positions where a primer was found in a read sequence
 #[derive(Debug, Clone)]
 pub struct PrimerMatch {
     pub start: usize,
@@ -119,8 +119,7 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
     let overhang_cost = 0.5;
     let mut searcher = Searcher::<Iupac>::new_fwd_with_overhang(overhang_cost);
     // Convert error_rate to max allowed edits (generous upper bound)
-    let max_edits =
-        ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
+    let max_edits = ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
     let matches = searcher.search(primer.as_bytes(), region_bytes, max_edits);
 
     // Find best match (lowest cost)

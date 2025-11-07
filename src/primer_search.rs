@@ -22,7 +22,7 @@ pub struct PairedPrimerSearchResult {
 }
 
 /// Search for primer at the end of a read (last search_length bases)
-/// Returns the match with coordinates relative to the original read
+/// Returns the match with positions relative to the original read
 fn find_primer_at_end(
     cfg: &SearchConfig,
     read: &str,
@@ -36,7 +36,7 @@ fn find_primer_at_end(
 
     // Perform semi-global alignment with IUPAC support
     if let Some(match_result) = find_primer(cfg, end_region, primer) {
-        // Convert coordinates from end_region to original read
+        // Convert positions from end_region to original read
         let offset = read.len() - search_len;
         Some(PrimerMatch {
             start: offset + match_result.start,
@@ -71,13 +71,13 @@ pub fn search_paired_primers(
     }
 
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
-    // Search in original read - trim positions are in original read coordinates
+    // Search in original read - trim positions are in original read positions
     // After trimming, the amplicon will be reverse complemented
     if let Some(reverse_match) = find_primer(cfg, read, &primers.reverse) {
         if let Some(forward_match) =
             find_primer_at_end(cfg, read, &primers.forward_rc, search_length)
         {
-            // Trim coordinates are in original read: trim from reverse_match.end to forward_match.start
+            // Trim positions are in original read: trim from reverse_match.end to forward_match.start
             return PairedPrimerSearchResult {
                 found: true,
                 trim_start: reverse_match.end, // Start keeping after reverse primer

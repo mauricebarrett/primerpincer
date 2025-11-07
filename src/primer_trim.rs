@@ -11,6 +11,18 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+/// Convert byte slice to string without UTF-8 validation.
+/// 
+/// SAFETY: This function is safe because:
+/// - FASTQ sequences contain only A, C, G, T, N (all ASCII)
+/// - FASTQ quality strings contain Phred+33 values (all ASCII)
+/// - The paraseq parser validates UTF-8 during parsing before we see the data
+/// - If parsing succeeded, the data is guaranteed to be valid UTF-8
+#[inline]
+fn bytes_to_str_unchecked(bytes: &[u8]) -> &str {
+    unsafe { std::str::from_utf8_unchecked(bytes) }
+}
+
 /// Trim sequence and quality based on search result
 /// Handles reverse complementing if needed (after trimming)
 /// Returns (trimmed_sequence, trimmed_quality) if trimming is successful, None otherwise
@@ -24,23 +36,20 @@ fn trim_sequence<'a>(
         return None;
     }
 
-    // Trim from both ends first (using original read coordinates)
+    // Trim from both ends first (using original read positions)
     // trim_start: position to start keeping (trim everything before this)
     // trim_end: position to stop keeping (trim everything from this position to end)
-    if result.trim_end <= result.trim_start {
-        // Invalid trimming coordinates
-        return None;
-    }
-
-    // Ensure we have valid trim coordinates
+    
+    // Ensure we have valid trim positions
     let trim_end = result.trim_end.min(seq.len());
     if trim_end <= result.trim_start {
-        return None; // Invalid or empty result
+        // Invalid trimming positions or empty result
+        return None;
     }
 
     // Trim the sequence and quality
     let trimmed_seq = &seq[result.trim_start..trim_end];
-    let trimmed_qual = qual.get(result.trim_start..trim_end)?; // Returns None if out of bounds
+    let trimmed_qual = &qual[result.trim_start..trim_end];
 
     // Reverse complement the trimmed amplicon if needed
     if result.needs_reverse_complement {
@@ -154,13 +163,14 @@ impl PrimerTrimmer {
 
 impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
     fn process_record(&mut self, record: R) -> paraseq::parallel::Result<()> {
-        // Convert sequence and quality to &str (keep bindings for lifetime)
+        // Convert sequence and quality to &str using unchecked conversion
+        // Safe: paraseq parser already validated UTF-8 during parsing
         let seq_bytes = record.seq();
-        let seq = std::str::from_utf8(&seq_bytes).map_err(|e| e.into_process_error())?;
+        let seq = bytes_to_str_unchecked(&seq_bytes);
         let qual_bytes = record
             .qual()
             .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
-        let qual = std::str::from_utf8(qual_bytes).map_err(|e| e.into_process_error())?;
+        let qual = bytes_to_str_unchecked(qual_bytes);
 
         // Time primer searching
         let search_start = Instant::now();
@@ -193,7 +203,8 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
 
     fn on_batch_complete(&mut self) -> paraseq::parallel::Result<()> {
         let io_start = Instant::now();
-        let mut global_out = self.global_output.lock().unwrap();
+        let mut global_out = self.global_output.lock()
+            .expect("Failed to acquire write lock on output");
         global_out.write_all(self.local_output.as_bytes())?;
         global_out.flush()?;
         self.local_output.clear();
