@@ -25,6 +25,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Search length: {}", args.search_length);
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
+    eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
 
     // Process FASTQ file with primer trimming
     process_fastq(
