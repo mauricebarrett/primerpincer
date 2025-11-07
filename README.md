@@ -2,6 +2,8 @@
 
 **Blazingly fast and accurate tool for trimming primers from FASTQ files derived from long-read sequencing (ONT & PacBio).**
 
+[![Pixi Badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/prefix-dev/pixi/main/assets/badge/v0.json)](https://pixi.sh)
+
 PrimerPincer is a Rust-based command-line tool designed to efficiently detect and remove primers from single-end amplicon reads in FASTQ format, with a focus on long-read sequencing data such as PacBio or Oxford Nanopore platforms.
 
 ## Usage
@@ -67,11 +69,11 @@ Options:
 ```bash
 pixi run cargo run -- \
  -i ./example_data/raw/ATCC-MSA1003-toy-example.fastq.gz \
- -o ./example_data/primerpincer/ATCC-MSA1003-toy-example.fastq.gz \
+ -o ./example_data/primerpincer_proccesed/ATCC-MSA1003-toy-example.fastq.gz \
  -f "AGRGTTYGATYMTGGCTCAG" \
  -r "RGYTACCTTGTTACGACTT"  \
  -t 12 \
- -a myers \
+ -a sassy \
  -O 6 \
  -l 500
 
