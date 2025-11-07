@@ -4,7 +4,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/primerpincer.git"
+    "url": "https://github.com/mauricebarrett/primerpincer.git"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
