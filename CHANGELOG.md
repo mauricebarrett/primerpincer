@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/mauricebarrett/primerpincer/compare/v0.1.0...v0.2.0) (2025-11-07)
+
+
+### Features
+
+* Display version information in CLI output ([f3e526e](https://github.com/mauricebarrett/primerpincer/commit/f3e526e6f96148246ab16cbed3a8c908ff27d7ad))
+
 # 1.0.0 (2025-11-07)
 
 
