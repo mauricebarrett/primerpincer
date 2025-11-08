@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/mauricebarrett/primerpincer/compare/v0.2.0...v0.3.0) (2025-11-08)
+
+
+### Features
+
+* Add BNDM algorithm for exact primer matching and enhance Myers caching ([f4d816a](https://github.com/mauricebarrett/primerpincer/commit/f4d816a3a2690736f6b093a1fbdcb75364dc47c3))
+
 # [0.2.0](https://github.com/mauricebarrett/primerpincer/compare/v0.1.0...v0.2.0) (2025-11-07)
 
 
