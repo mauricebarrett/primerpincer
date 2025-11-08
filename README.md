@@ -8,8 +8,6 @@ PrimerPincer is a Rust-based command-line tool designed to efficiently detect an
 
 ## Usage
 
-Reads on stdin and writes to stdout.
-
 ```text
 PrimerPincer - a CLI primer trimming tool for long-read sequencing data
 
@@ -29,18 +27,19 @@ Options:
           Reverse primer sequence (5' to 3' orientation)
 
   -a, --algorithm <ALGORITHM>
-          Algorithm to use for primer matching: simd (default) or myers
+          Algorithm to use for primer matching
 
           Possible values:
-          - simd:  Use SIMD-accelerated edit distance calculation
-          - myers: Use Myers algorithm with IUPAC support
+          - myers: Use Myers bit-parallel algorithm for approximate matching
+          - sassy: Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
+          - bndm:  Use BNDM for exact matching (fastest for short exact matches)
           
-          [default: myers]
+          [default: sassy]
 
-  -e, --edit-distance <INT>
-          Maximum allowed edit distance in primer matching
+  -e, --error-rate <FLOAT>
+          Maximum error rate in primer matching (e.g., 0.15 for 15% errors)
           
-          [default: 3]
+          [default: 0.15]
 
   -l, --search-length <INT>
           Length to search for primer at start and end of sequence
