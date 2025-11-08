@@ -12,13 +12,13 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "sed -i 's/^version = \".*\"/version = \"${nextRelease.version}\"/' Cargo.toml"
+        "prepareCmd": "for file in Cargo.toml pixi.toml; do sed -i 's/^version = \".*\"/version = \"${nextRelease.version}\"/' \"$file\"; done"
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["Cargo.toml", "CHANGELOG.md", "Cargo.lock"],
+        "assets": ["Cargo.toml", "CHANGELOG.md", "Cargo.lock", "pixi.toml"],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],
