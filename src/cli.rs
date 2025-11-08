@@ -1,21 +1,5 @@
-use clap::{Parser, ValueEnum};
-
-/// Algorithm selection for primer matching
-#[derive(ValueEnum, Clone, Debug, Copy)]
-pub enum Algorithm {
-    /// Use Myers bit-parallel algorithm for approximate matching
-    Myers,
-    /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
-    Sassy,
-    /// Use BNDM for exact matching (fastest for short exact matches)
-    Bndm,
-}
-
-impl Default for Algorithm {
-    fn default() -> Self {
-        Algorithm::Sassy
-    }
-}
+use clap::Parser;
+use crate::search_algos::Algorithm;
 
 /// 🦀 PrimerPincer — A command-line tool for the rapid trimming of primers from long read amplicons
 #[derive(Parser, Debug)]
@@ -57,11 +41,7 @@ pub struct Cli {
         short = 'a',
         long = "algorithm",
         value_enum,
-        help = "Algorithm to use for primer matching: myers (approximate), sassy (SIMD, default), or bndm (exact)",
-        long_help = "Algorithm options:\n  \
-                     - myers: Bit-parallel approximate matching with configurable error rate\n  \
-                     - sassy: SIMD-accelerated search (default, requires AVX2/NEON, fastest for mismatches)\n  \
-                     - bndm: Exact matching via DAWG (fastest for short primers <30bp without mismatches)",
+        help = "Algorithm to use for primer matching",
         default_value_t = Algorithm::Sassy
     )]
     pub algorithm: Algorithm,

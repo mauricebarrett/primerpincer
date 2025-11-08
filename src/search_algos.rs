@@ -12,7 +12,24 @@
 //! The search algorithms return the same type (`PrimerMatch`) and can be used
 //! by `search_paired_primers` to locate primers at the start and end of reads.
 
-use crate::cli::Algorithm;
+use clap::ValueEnum;
+
+/// Algorithm selection for primer matching
+#[derive(ValueEnum, Clone, Debug, Copy)]
+pub enum Algorithm {
+    /// Use Myers bit-parallel algorithm for approximate matching
+    Myers,
+    /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
+    Sassy,
+    /// Use BNDM for exact matching (fastest for short exact matches)
+    Bndm,
+}
+
+impl Default for Algorithm {
+    fn default() -> Self {
+        Algorithm::Sassy
+    }
+}
 use crate::preparing_input::{PrimerSet, expand_degenerate_bases};
 use crate::primer_search::SearchConfig;
 use bio::pattern_matching::myers::{MyersBuilder, long::Myers};

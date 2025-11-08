@@ -1,4 +1,4 @@
-use crate::cli::Algorithm;
+use crate::search_algos::Algorithm;
 use crate::preparing_input::PrimerSet;
 use crate::primer_trim::PrimerTrimmer;
 use crate::search_algos::MyersPatternCache;

@@ -1,4 +1,4 @@
-use crate::cli::Algorithm;
+use crate::search_algos::Algorithm;
 use crate::preparing_input::PrimerSet;
 use crate::search_algos::{PrimerMatch, find_primer, find_primer_bndm_cached, MyersPatternCache, BndmPatternCache};
 use anyhow;
