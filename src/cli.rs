@@ -7,6 +7,8 @@ pub enum Algorithm {
     Myers,
     /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
     Sassy,
+    /// Use BNDM for exact matching (fastest for short exact matches)
+    Bndm,
 }
 
 impl Default for Algorithm {
@@ -55,7 +57,11 @@ pub struct Cli {
         short = 'a',
         long = "algorithm",
         value_enum,
-        help = "Algorithm to use for primer matching: myers or sassy",
+        help = "Algorithm to use for primer matching: myers (approximate), sassy (SIMD, default), or bndm (exact)",
+        long_help = "Algorithm options:\n  \
+                     - myers: Bit-parallel approximate matching with configurable error rate\n  \
+                     - sassy: SIMD-accelerated search (default, requires AVX2/NEON, fastest for mismatches)\n  \
+                     - bndm: Exact matching via DAWG (fastest for short primers <30bp without mismatches)",
         default_value_t = Algorithm::Sassy
     )]
     pub algorithm: Algorithm,

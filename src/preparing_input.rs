@@ -88,3 +88,56 @@ impl PrimerSet {
         }
     }
 }
+
+/// Expand IUPAC degenerative codes into all concrete base combinations
+/// Returns all possible sequences represented by the degenerate code
+/// 
+/// # Example
+/// "TCCTAGGGC" → ["TCCTAGGGC"] (no degeneracy)
+/// "TCCTNGGGC" → ["TCCTAGGGC", "TCCTCGGGC", "TCCTGGGGC", "TCCTTGGGC"]
+pub fn expand_degenerate_bases(seq: &str) -> Vec<String> {
+    // IUPAC ambiguity code expansions
+    let expand_base = |base: char| -> Vec<char> {
+        match base.to_ascii_uppercase() {
+            'A' => vec!['A'],
+            'C' => vec!['C'],
+            'G' => vec!['G'],
+            'T' => vec!['T'],
+            'R' => vec!['A', 'G'],           // puRine
+            'Y' => vec!['C', 'T'],           // pYrimidine
+            'M' => vec!['A', 'C'],           // aMino
+            'K' => vec!['G', 'T'],           // Keto
+            'S' => vec!['C', 'G'],           // Strong
+            'W' => vec!['A', 'T'],           // Weak
+            'B' => vec!['C', 'G', 'T'],      // not A
+            'D' => vec!['A', 'G', 'T'],      // not C
+            'H' => vec!['A', 'C', 'T'],      // not G
+            'V' => vec!['A', 'C', 'G'],      // not T
+            'N' => vec!['A', 'C', 'G', 'T'], // aNy base
+            _ => vec![base],                  // unknown or already concrete
+        }
+    };
+
+    let bases: Vec<Vec<char>> = seq
+        .chars()
+        .map(|c| expand_base(c))
+        .collect();
+
+    // Generate cartesian product of all base options
+    fn cartesian_product(bases: &[Vec<char>], index: usize, current: String, result: &mut Vec<String>) {
+        if index == bases.len() {
+            result.push(current);
+            return;
+        }
+
+        for &base in &bases[index] {
+            cartesian_product(bases, index + 1, format!("{}{}", current, base), result);
+        }
+    }
+
+    let mut result = Vec::new();
+    if !bases.is_empty() {
+        cartesian_product(&bases, 0, String::new(), &mut result);
+    }
+    result
+}

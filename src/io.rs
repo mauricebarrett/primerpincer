@@ -1,6 +1,7 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::PrimerSet;
 use crate::primer_trim::PrimerTrimmer;
+use crate::search_algos::MyersPatternCache;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -40,9 +41,17 @@ pub fn process_fastq(
     let setup_start = Instant::now();
     let primers = PrimerSet::new(forward_primer, reverse_primer);
 
+    // Build Myers matchers once if using Myers algorithm
+    let myers_cache = if matches!(algorithm, Algorithm::Myers) {
+        eprintln!("🔧 Pre-building Myers pattern matchers for 4 primer variants...");
+        Some(MyersPatternCache::new(&primers))
+    } else {
+        None
+    };
+
     eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
 
-    // Create processor
+    // Create processor with pre-built Myers cache
     let mut processor = PrimerTrimmer::new(
         output,
         primers,
@@ -50,6 +59,8 @@ pub fn process_fastq(
         algorithm,
         error_rate,
         min_overlap,
+        myers_cache,
+        None,
     )?;
 
     // Peek at the file to detect compression using magic bytes
@@ -67,10 +78,11 @@ pub fn process_fastq(
     let setup_time = setup_start.elapsed();
     eprintln!("⏱️  Setup time: {:.2}s", setup_time.as_secs_f64());
     
-    // Open fresh file handle for reading and process with appropriate decompression
-    let processing_start = Instant::now();
+    // Measure reading time separately (this includes decompression if needed)
+    let read_start = Instant::now();
     let input_file = File::open(input_path)?;
     
+    let processing_start = Instant::now();
     if is_gzip {
         let decoder = GzDecoder::new(input_file);
         let buffered = BufReader::with_capacity(256 * 1024, decoder);
@@ -84,10 +96,15 @@ pub fn process_fastq(
     }
     
     let processing_time = processing_start.elapsed();
+    let read_time = read_start.elapsed();
+    
     eprintln!("⏱️  Total processing time: {:.2}s", processing_time.as_secs_f64());
+    eprintln!("⏱️  Input reading + decompression time: {:.2}s", read_time.as_secs_f64());
+    
+    let read_time_s = read_time.as_secs_f64();
     
     // Print detailed timing statistics from the processor
-    processor.print_timing_stats();
+    processor.print_timing_stats(read_time_s);
 
     Ok(())
 }

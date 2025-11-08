@@ -1,6 +1,6 @@
 use crate::cli::Algorithm;
 use crate::preparing_input::PrimerSet;
-use crate::search_algos::{PrimerMatch, find_primer};
+use crate::search_algos::{PrimerMatch, find_primer, find_primer_bndm_cached, MyersPatternCache, BndmPatternCache};
 use anyhow;
 
 /// Configuration for primer search
@@ -21,29 +21,17 @@ pub struct PairedPrimerSearchResult {
     pub needs_reverse_complement: bool, // Whether read needs to be reverse complemented
 }
 
-/// Search for primer at the end of a read (last search_length bases)
-/// Returns the match with positions relative to the original read
-fn find_primer_at_end(
+/// Helper to search with optional cache using RefCell interior mutability
+fn search_with_cache(
     cfg: &SearchConfig,
     read: &str,
     primer: &str,
-    search_length: usize,
+    myers_cache: Option<&std::cell::RefCell<bio::pattern_matching::myers::long::Myers<u64>>>,
 ) -> Option<PrimerMatch> {
-    // Find the start position of the search region
-    let search_len = search_length.min(read.len());
-    // Extract the end region (last search_length bases)
-    let end_region = &read[read.len() - search_len..];
-
-    // Perform semi-global alignment with IUPAC support
-    if let Some(match_result) = find_primer(cfg, end_region, primer) {
-        // Convert positions from end_region to original read
-        let offset = read.len() - search_len;
-        Some(PrimerMatch {
-            start: offset + match_result.start,
-            end: offset + match_result.end,
-        })
+    if let Some(cache) = myers_cache {
+        find_primer(cfg, read, primer, Some(&mut *cache.borrow_mut()))
     } else {
-        None
+        find_primer(cfg, read, primer, None)
     }
 }
 
@@ -55,12 +43,57 @@ pub fn search_paired_primers(
     read: &str,
     primers: &PrimerSet,
     search_length: usize,
+    myers_cache: Option<&MyersPatternCache>,
+    bndm_cache: Option<&BndmPatternCache>,
 ) -> PairedPrimerSearchResult {
+    // Helper to search with BNDM cache if available, otherwise use standard search
+    let search_forward = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
+        if let Some(cache) = bndm_cache {
+            find_primer_bndm_cached(cfg, read, &cache.forward)
+        } else {
+            search_with_cache(cfg, read, &primers.forward, myers_cache.map(|c| &c.forward))
+        }
+    };
+
+    let search_reverse = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
+        if let Some(cache) = bndm_cache {
+            find_primer_bndm_cached(cfg, read, &cache.reverse)
+        } else {
+            search_with_cache(cfg, read, &primers.reverse, myers_cache.map(|c| &c.reverse))
+        }
+    };
+
+    let search_forward_rc = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
+        if let Some(cache) = bndm_cache {
+            find_primer_bndm_cached(cfg, read, &cache.forward_rc)
+        } else {
+            search_with_cache(cfg, read, &primers.forward_rc, myers_cache.map(|c| &c.forward_rc))
+        }
+    };
+
+    let search_reverse_rc = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
+        if let Some(cache) = bndm_cache {
+            find_primer_bndm_cached(cfg, read, &cache.reverse_rc)
+        } else {
+            search_with_cache(cfg, read, &primers.reverse_rc, myers_cache.map(|c| &c.reverse_rc))
+        }
+    };
+
     // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
-    if let Some(forward_match) = find_primer(cfg, read, &primers.forward) {
-        if let Some(reverse_match) =
-            find_primer_at_end(cfg, read, &primers.reverse_rc, search_length)
-        {
+    if let Some(forward_match) = search_forward(cfg, read) {
+        if let Some(reverse_match) = {
+            let search_len = search_length.min(read.len());
+            let end_region = &read[read.len() - search_len..];
+            if let Some(match_result) = search_reverse_rc(cfg, end_region) {
+                let offset = read.len() - search_len;
+                Some(PrimerMatch {
+                    start: offset + match_result.start,
+                    end: offset + match_result.end,
+                })
+            } else {
+                None
+            }
+        } {
             return PairedPrimerSearchResult {
                 found: true,
                 trim_start: forward_match.end,
@@ -71,17 +104,24 @@ pub fn search_paired_primers(
     }
 
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
-    // Search in original read - trim positions are in original read positions
-    // After trimming, the amplicon will be reverse complemented
-    if let Some(reverse_match) = find_primer(cfg, read, &primers.reverse) {
-        if let Some(forward_match) =
-            find_primer_at_end(cfg, read, &primers.forward_rc, search_length)
-        {
-            // Trim positions are in original read: trim from reverse_match.end to forward_match.start
+    if let Some(reverse_match) = search_reverse(cfg, read) {
+        if let Some(forward_match) = {
+            let search_len = search_length.min(read.len());
+            let end_region = &read[read.len() - search_len..];
+            if let Some(match_result) = search_forward_rc(cfg, end_region) {
+                let offset = read.len() - search_len;
+                Some(PrimerMatch {
+                    start: offset + match_result.start,
+                    end: offset + match_result.end,
+                })
+            } else {
+                None
+            }
+        } {
             return PairedPrimerSearchResult {
                 found: true,
-                trim_start: reverse_match.end, // Start keeping after reverse primer
-                trim_end: forward_match.start, // Stop keeping before forward primer RC
+                trim_start: reverse_match.end,
+                trim_end: forward_match.start,
                 needs_reverse_complement: true,
             };
         }
@@ -103,6 +143,8 @@ pub struct PrimerMatcher {
     primers: PrimerSet,
     search_length: usize,
     config: SearchConfig,
+    myers_cache: Option<MyersPatternCache>,
+    bndm_cache: Option<BndmPatternCache>,
 }
 
 impl PrimerMatcher {
@@ -113,6 +155,8 @@ impl PrimerMatcher {
         algorithm: Algorithm,
         error_rate: f64,
         min_overlap: usize,
+        myers_cache: Option<MyersPatternCache>,
+        bndm_cache: Option<BndmPatternCache>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             primers,
@@ -123,11 +167,13 @@ impl PrimerMatcher {
                 window: search_length,
                 min_overlap,
             },
+            myers_cache,
+            bndm_cache,
         })
     }
 
     /// Search for paired primers in a sequence
     pub fn search_primers(&self, seq: &str) -> PairedPrimerSearchResult {
-        search_paired_primers(&self.config, seq, &self.primers, self.search_length)
+        search_paired_primers(&self.config, seq, &self.primers, self.search_length, self.myers_cache.as_ref(), self.bndm_cache.as_ref())
     }
 }
