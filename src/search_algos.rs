@@ -17,11 +17,13 @@ use clap::ValueEnum;
 /// Algorithm selection for primer matching
 #[derive(ValueEnum, Clone, Debug, Copy)]
 pub enum Algorithm {
-    /// Use Myers bit-parallel algorithm for approximate matching
-    Myers,
-    /// Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
+    /// Pattern matching algorithm as described in Beeloo and Ragnar Koerkamp (2025)
     Sassy,
-    /// Use BNDM for exact matching (fastest for short exact matches)
+    /// Rust Bio's Myers bit-parallel approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib’s (Šošić and Šikić, 2017).
+    Myers,
+    /// Hamming distance algorithm as described in Waterman and Eggert (1987). Can tolerate mismatches but not indels.
+    Hamming,
+    /// Rust Bio's BNDM exact pattern matching algorithm as described in Baeza-Yates and Gonnet (1992). Exact matching only. No mismatch or indels tolerated.
     Bndm,
 }
 
@@ -33,6 +35,7 @@ impl Default for Algorithm {
 use crate::preparing_input::build_myers_matcher;
 use crate::primer_search::SearchConfig;
 use bio::pattern_matching::bndm::BNDM;
+use bio::alignment::distance::simd::hamming as simd_hamming;
 use bio::pattern_matching::myers::long::Myers;
 use sassy::{Searcher, profiles::Iupac};
 
@@ -42,6 +45,44 @@ use sassy::{Searcher, profiles::Iupac};
 pub struct PrimerMatch {
     pub start: usize,
     pub end: usize,
+}
+
+
+
+/// Find primer in read using Sassy SIMD-accelerated search
+fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
+    // Search in the first 'window' bases
+    let window = cfg.window.min(read.len());
+    let region_bytes = &read[..window].as_bytes();
+
+    // Use overhang cost to handle partial primer matches at read boundaries
+    // Overhang cost of 0.5 means each overhanging character is penalized by 0.5
+    // instead of the full cost - important for truncated primers at contig/read ends
+    let overhang_cost = 0.5;
+    let mut searcher = Searcher::<Iupac>::new_fwd_with_overhang(overhang_cost);
+    // Convert error_rate to max allowed edits (generous upper bound)
+    let max_edits =
+        ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
+    let matches = searcher.search(primer.as_bytes(), region_bytes, max_edits);
+
+    // Find best match (lowest cost)
+    let best_match = matches.iter().min_by_key(|m| m.cost).and_then(|m| {
+        let overlap_len = m.text_end - m.text_start;
+        let min_overlap_len = cfg.min_overlap.min(primer.len());
+        let error_rate = (m.cost as f64) / (overlap_len as f64);
+
+        // Check minimum overlap requirement and error rate
+        if overlap_len >= min_overlap_len && error_rate <= cfg.error_rate {
+            Some(PrimerMatch {
+                start: m.text_start,
+                end: m.text_end,
+            })
+        } else {
+            None
+        }
+    });
+
+    best_match
 }
 
 /// Find primer in read using Myers bit-parallel algorithm with IUPAC support
@@ -108,8 +149,74 @@ fn find_primer_myers(
     best_match
 }
 
-/// Find primer in read using BNDM for exact matching
+/// Find primer in read using Hamming distance algorithm
+fn find_primer_hamming(
+    cfg: &SearchConfig,
+    read: &str,
+    primer_variants: &[String],
+) -> Option<PrimerMatch> {
+	let window = cfg.window.min(read.len());
+	let region_bytes = read[..window].as_bytes();
+
+	// Guard: no variants provided
+	if primer_variants.is_empty() {
+		return None;
+	}
+
+	let min_overlap_len = cfg.min_overlap.min(primer_variants[0].len());
+
+	// Track best match across all variants and positions
+	let mut best_match: Option<PrimerMatch> = None;
+	let mut best_distance: u64 = u64::MAX;
+
+	for primer_variant in primer_variants {
+		let primer_bytes = primer_variant.as_bytes();
+		let primer_len = primer_bytes.len();
+
+		// Slide the primer across the searchable region (no indels; compare fixed-length windows)
+		for start in 0..window {
+			let max_overlap = window - start;
+			if max_overlap == 0 {
+				break;
+			}
+			let overlap_len = primer_len.min(max_overlap);
+			if overlap_len < min_overlap_len {
+				continue;
+			}
+
+			// Compute Hamming distance on the overlapping portion
+			let p_slice = &primer_bytes[..overlap_len];
+			let r_slice = &region_bytes[start..start + overlap_len];
+			let distance: u64 = simd_hamming(p_slice, r_slice);
+
+			// Check error rate threshold
+			let error_rate = (distance as f64) / (overlap_len as f64);
+			if error_rate > cfg.error_rate {
+				continue;
+			}
+
+			if distance < best_distance {
+				best_distance = distance;
+				best_match = Some(PrimerMatch {
+					start,
+					end: start + overlap_len - 1, // inclusive end
+				});
+
+				// Early exit on perfect match
+				if best_distance == 0 {
+					return best_match;
+				}
+			}
+		}
+	}
+
+	best_match
+}
+
+// Find primer in read using BNDM for exact matching
 /// Searches all concrete variants (expanded from degenerate codes)
+/// Note: BNDM requires complete exact matches of the full pattern, so min_overlap
+/// is not applicable (overlap_len always equals primer length for any match)
 fn find_primer_bndm(
     cfg: &SearchConfig,
     read: &str,
@@ -118,11 +225,6 @@ fn find_primer_bndm(
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
     let region_bytes = read[..window].as_bytes();
-    let min_overlap_len = cfg.min_overlap.min(if primer_variants.is_empty() {
-        0
-    } else {
-        primer_variants[0].len()
-    });
 
     // Try each primer variant (from degenerate expansion)
     for primer_variant in primer_variants {
@@ -130,58 +232,19 @@ fn find_primer_bndm(
         let matcher = BNDM::new(primer_bytes);
 
         // Find first exact match in the window
+        // BNDM always matches the complete pattern, so no partial overlap check needed
         if let Some(pos) = matcher.find_all(region_bytes).next() {
             let match_end = pos + primer_bytes.len();
-            let overlap_len = match_end - pos;
-
-            // Check minimum overlap requirement
-            if overlap_len >= min_overlap_len {
-                return Some(PrimerMatch {
-                    start: pos,
-                    end: match_end - 1, // Make end inclusive to match Myers convention
-                });
-            }
+            return Some(PrimerMatch {
+                start: pos,
+                end: match_end - 1, // Make end inclusive to match Myers convention
+            });
         }
     }
 
     None
 }
 
-/// Find primer in read using Sassy SIMD-accelerated search
-fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
-    // Search in the first 'window' bases
-    let window = cfg.window.min(read.len());
-    let region_bytes = &read[..window].as_bytes();
-
-    // Use overhang cost to handle partial primer matches at read boundaries
-    // Overhang cost of 0.5 means each overhanging character is penalized by 0.5
-    // instead of the full cost - important for truncated primers at contig/read ends
-    let overhang_cost = 0.5;
-    let mut searcher = Searcher::<Iupac>::new_fwd_with_overhang(overhang_cost);
-    // Convert error_rate to max allowed edits (generous upper bound)
-    let max_edits =
-        ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
-    let matches = searcher.search(primer.as_bytes(), region_bytes, max_edits);
-
-    // Find best match (lowest cost)
-    let best_match = matches.iter().min_by_key(|m| m.cost).and_then(|m| {
-        let overlap_len = m.text_end - m.text_start;
-        let min_overlap_len = cfg.min_overlap.min(primer.len());
-        let error_rate = (m.cost as f64) / (overlap_len as f64);
-
-        // Check minimum overlap requirement and error rate
-        if overlap_len >= min_overlap_len && error_rate <= cfg.error_rate {
-            Some(PrimerMatch {
-                start: m.text_start,
-                end: m.text_end,
-            })
-        } else {
-            None
-        }
-    });
-
-    best_match
-}
 
 /// Find primer in read using degenerate-aware algorithms (Myers, Sassy)
 /// Optionally uses a pre-built Myers matcher for the Myers algorithm
@@ -194,7 +257,8 @@ pub fn find_primer_degenerate(
     match cfg.algorithm {
         Algorithm::Myers => find_primer_myers(cfg, read, primer, myers_cache),
         Algorithm::Sassy => find_primer_sassy(cfg, read, primer),
-        Algorithm::Bndm => unreachable!("Exact-match algorithms require pre-expanded variants"),
+		Algorithm::Bndm => unreachable!("Requires pre-expanded variants"),
+		Algorithm::Hamming => unreachable!("Requires pre-expanded variants"),
     }
 }
 
@@ -204,5 +268,9 @@ pub fn find_primer_expanded(
     read: &str,
     primer_variants: &[String],
 ) -> Option<PrimerMatch> {
-    find_primer_bndm(cfg, read, primer_variants)
+	match cfg.algorithm {
+		Algorithm::Bndm => find_primer_bndm(cfg, read, primer_variants),
+		Algorithm::Hamming => find_primer_hamming(cfg, read, primer_variants),
+		_ => unreachable!("Degenerate-aware algorithms should use find_primer_degenerate"),
+	}
 }

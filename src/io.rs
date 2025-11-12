@@ -55,7 +55,7 @@ pub fn process_fastq(
     };
 
     // Build expanded primer set once if using BNDM algorithm
-    let expanded_primers = if matches!(algorithm, Algorithm::Bndm) {
+	let expanded_primers = if matches!(algorithm, Algorithm::Bndm | Algorithm::Hamming) {
         eprintln!("🔧 Pre-expanding degenerate primers for BNDM...");
         Some(ExpandedPrimerSet::new(&primers))
     } else {

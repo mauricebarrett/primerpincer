@@ -70,7 +70,7 @@ pub struct Cli {
         short = 'O',
         long = "overlap",
         value_name = "MINLENGTH",
-        help = "Minimum overlap length. Require MINLENGTH bases of the primer to match (like cutadapt -O)",
+        help = "Minimum overlap length. Require MINLENGTH bases of the primer to match (default 6)",
         default_value_t = 6
     )]
     pub overlap: usize,

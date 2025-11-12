@@ -39,7 +39,8 @@ fn search_with_degenerate(
             }
         }
         Algorithm::Sassy => find_primer_degenerate(cfg, read, primer, None),
-        Algorithm::Bndm => unreachable!("Exact-match algorithms should use search_with_expanded"),
+		Algorithm::Bndm => unreachable!("Exact-match algorithms should use search_with_expanded"),
+		Algorithm::Hamming => unreachable!("Exact-match algorithms should use search_with_expanded"),
     }
 }
 
@@ -65,7 +66,7 @@ pub fn search_paired_primers(
 ) -> PairedPrimerSearchResult {
     // Route to algorithm-specific search based on configuration
     match cfg.algorithm {
-        Algorithm::Bndm => search_paired_primers_expanded(
+		Algorithm::Bndm | Algorithm::Hamming => search_paired_primers_expanded(
             cfg,
             read,
             primers,
@@ -252,10 +253,10 @@ impl PrimerMatcher {
         myers_patterns: Option<MyersPatternSet>,
         expanded_primers: Option<ExpandedPrimerSet>,
     ) -> anyhow::Result<Self> {
-        // Ensure expanded primers are available when BNDM is selected
+		// Ensure expanded primers are available when BNDM or Hamming are selected
         let expanded_primers = match (algorithm, expanded_primers) {
-            (Algorithm::Bndm, Some(exp)) => Some(exp),
-            (Algorithm::Bndm, None) => Some(ExpandedPrimerSet::new(&primers)),
+			(Algorithm::Bndm | Algorithm::Hamming, Some(exp)) => Some(exp),
+			(Algorithm::Bndm | Algorithm::Hamming, None) => Some(ExpandedPrimerSet::new(&primers)),
             (_, exp) => exp,
         };
 
