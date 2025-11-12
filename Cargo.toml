@@ -31,7 +31,7 @@ flate2 = "1.1.5"
 niffler = "2.5"
 once_cell = "1.19"
 paraseq = { version = "0.4.3", default-features = false, features = ["anyhow", "niffler"] }
-sassy = "0.1.6"
+sassy = { version = "0.1.6", features = ["scalar"] }
 
 
 [dev-dependencies]
