@@ -3,6 +3,25 @@ name = "primerpincer"
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
+authors = ["Maurice Barrett <mauricepatrickbarrett@gmail.com"]
+description = "A CLI primer trimming tool for long-read sequencing data"
+repository = "https://github.com/mauricebarrett/primerpincer"
+homepage = "https://github.com/mauricebarrett/primerpincer"
+documentation = "https://github.com/mauricebarrett/primerpincer"
+keywords = ["bioinformatics", "primers", "sequencing", "fastq", "microbiome"]
+categories = ["command-line-utilities", "science"]
+readme = "README.md"
+exclude = [
+    "example_data/",
+    "docs/",
+    "setup.sh",
+    "pixi.toml",
+    "pixi.lock",
+    ".pixi",
+    "package.json",
+    ".github/",
+]
+
 
 [dependencies]
 anyhow = "1.0.100"
