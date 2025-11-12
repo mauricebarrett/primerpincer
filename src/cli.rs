@@ -5,7 +5,7 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(
     author = "Maurice Barrett",
-    version = "alpha",
+    version = env!("CARGO_PKG_VERSION"),
     about = "PrimerPincer - a CLI tool for the rapid identification and removal of paired primers from long read amplicons",
     long_about = None
 )]

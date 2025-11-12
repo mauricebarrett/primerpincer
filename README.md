@@ -2,8 +2,28 @@
 
 [![Pixi Badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/prefix-dev/pixi/main/assets/badge/v0.json)](https://pixi.sh)
 
-## Insallation
 
+## Installation
+
+### Install cargo
+
+First install cargo!
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Install primerpincer
+Now you can install primerpincer. The most straightforward way is
+
+```bash
+cargo install primerpincer
+```
+However to enable SIMD optimizations in Sassy the following methods can be used.
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo install primerpincer
+```
 
 ## Introduciton
 
@@ -18,6 +38,7 @@ In amplicon-based microbiome studies, such as those targeting 16S, ITS, 18S, or 
 The rise of third-generation sequencing platforms from PacBio and ONT has enabled the use of much longer marker gene regions than was previously feasible—such as the full-length 16S (V1–V9), 16S–ITS–23S operon, or 18S–ITS–28S operon. Additionally, the throughput and read counts produced per run continue to increase, driving a steady growth in the total volume of sequencing data generated.
 
 PrimerPincer is designed to scale with these demands, providing rapid and accurate primer identification and removal for long-read datasets—with performance and scalability built for the future of sequencing.
+
 ## Features
 🦀 Rust based
 Lighting fast
