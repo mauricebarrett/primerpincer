@@ -1,12 +1,12 @@
 use crate::search_algos::Algorithm;
 use clap::Parser;
 
-/// 🦀 PrimerPincer — A command-line tool for the rapid trimming of primers from long read amplicons
+/// 🦀 PrimerPincer — A command-line tool for the rapid identification and removal of paired primers from long read amplicons
 #[derive(Parser, Debug)]
 #[command(
     author = "Maurice Barrett",
     version = "alpha",
-    about = "PrimerPincer - a CLI primer trimming tool for long-read sequencing data",
+    about = "PrimerPincer - a CLI tool for the rapid identification and removal of paired primers from long read amplicons",
     long_about = None
 )]
 pub struct Cli {
