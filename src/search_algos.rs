@@ -30,40 +30,11 @@ impl Default for Algorithm {
         Algorithm::Sassy
     }
 }
-use crate::preparing_input::{PrimerSet, expand_degenerate_bases};
+use crate::preparing_input::build_myers_matcher;
 use crate::primer_search::SearchConfig;
-use bio::pattern_matching::myers::{MyersBuilder, long::Myers};
 use bio::pattern_matching::bndm::BNDM;
-use once_cell::sync::Lazy;
+use bio::pattern_matching::myers::long::Myers;
 use sassy::{Searcher, profiles::Iupac};
-
-static MYERS_BUILDER: Lazy<MyersBuilder> = Lazy::new(|| {
-    // Build Myers matcher with IUPAC ambiguity support
-    // IUPAC codes recognized in the pattern will match multiple bases in the text
-    let mut builder = MyersBuilder::new();
-
-    // Define IUPAC ambiguities - pattern ambiguities match multiple bases in text
-    builder.ambig(b'M', b"AC"); // Amino (A or C)
-    builder.ambig(b'R', b"AG"); // puRine (A or G)
-    builder.ambig(b'W', b"AT"); // Weak (A or T)
-    builder.ambig(b'S', b"CG"); // Strong (C or G)
-    builder.ambig(b'Y', b"CT"); // pYrimidine (C or T)
-    builder.ambig(b'K', b"GT"); // Keto (G or T)
-    builder.ambig(b'V', b"ACG"); // (A or C or G)
-    builder.ambig(b'H', b"ACT"); // (A or C or T)
-    builder.ambig(b'D', b"AGT"); // (A or G or T)
-    builder.ambig(b'B', b"CGT"); // (C or G or T)
-    builder.ambig(b'N', b"ACGT"); // aNy base (A or C or G or T)
-
-    // Also support ambiguities in the text (less common but may occur)
-    // This allows ambiguous bases in the read to match the primer
-    builder.ambig(b'A', b"MRWVHDN");
-    builder.ambig(b'C', b"MSYVHBN");
-    builder.ambig(b'G', b"RSKDVBN");
-    builder.ambig(b'T', b"WYKDHBN");
-
-    builder
-});
 
 /// Result of a primer search
 /// Contains the positions where a primer was found in a read sequence
@@ -73,54 +44,14 @@ pub struct PrimerMatch {
     pub end: usize,
 }
 
-/// Cached Myers pattern matchers for all four primer variants
-/// Built once and reused across all reads for optimal performance
-#[derive(Clone)]
-pub struct MyersPatternCache {
-    pub forward: std::cell::RefCell<Myers<u64>>,
-    pub reverse: std::cell::RefCell<Myers<u64>>,
-    pub forward_rc: std::cell::RefCell<Myers<u64>>,
-    pub reverse_rc: std::cell::RefCell<Myers<u64>>,
-}
-
-impl MyersPatternCache {
-    /// Create a new cache by building Myers matchers for all four primer variants
-    pub fn new(primers: &PrimerSet) -> Self {
-        Self {
-            forward: std::cell::RefCell::new(MYERS_BUILDER.build_long(primers.forward.as_bytes())),
-            reverse: std::cell::RefCell::new(MYERS_BUILDER.build_long(primers.reverse.as_bytes())),
-            forward_rc: std::cell::RefCell::new(MYERS_BUILDER.build_long(primers.forward_rc.as_bytes())),
-            reverse_rc: std::cell::RefCell::new(MYERS_BUILDER.build_long(primers.reverse_rc.as_bytes())),
-        }
-    }
-}
-
-/// Cached BNDM matchers for exact matching of all four primer variants
-/// Each primer may be degenerate, so we store Vec of concrete sequences
-#[derive(Clone)]
-pub struct BndmPatternCache {
-    pub forward: Vec<String>,
-    pub reverse: Vec<String>,
-    pub forward_rc: Vec<String>,
-    pub reverse_rc: Vec<String>,
-}
-
-impl BndmPatternCache {
-    /// Create a new BNDM cache by expanding degenerate primers into all concrete variants
-    #[allow(dead_code)]
-    pub fn new(primers: &PrimerSet) -> Self {
-        Self {
-            forward: expand_degenerate_bases(&primers.forward),
-            reverse: expand_degenerate_bases(&primers.reverse),
-            forward_rc: expand_degenerate_bases(&primers.forward_rc),
-            reverse_rc: expand_degenerate_bases(&primers.reverse_rc),
-        }
-    }
-}
-
 /// Find primer in read using Myers bit-parallel algorithm with IUPAC support
 /// If myers_cache is provided, uses the pre-built matcher; otherwise builds one on the fly
-fn find_primer_myers(cfg: &SearchConfig, read: &str, primer: &str, myers_cache: Option<&mut Myers<u64>>) -> Option<PrimerMatch> {
+fn find_primer_myers(
+    cfg: &SearchConfig,
+    read: &str,
+    primer: &str,
+    myers_cache: Option<&mut Myers<u64>>,
+) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
     let region_bytes = read[..window].as_bytes();
@@ -135,7 +66,7 @@ fn find_primer_myers(cfg: &SearchConfig, read: &str, primer: &str, myers_cache: 
     let myers: &mut Myers<u64> = if let Some(cached) = myers_cache {
         cached
     } else {
-        owned_matcher = MYERS_BUILDER.build_long(primer.as_bytes());
+        owned_matcher = build_myers_matcher(primer.as_bytes());
         &mut owned_matcher
     };
 
@@ -179,11 +110,19 @@ fn find_primer_myers(cfg: &SearchConfig, read: &str, primer: &str, myers_cache: 
 
 /// Find primer in read using BNDM for exact matching
 /// Searches all concrete variants (expanded from degenerate codes)
-fn find_primer_bndm(cfg: &SearchConfig, read: &str, primer_variants: &[String]) -> Option<PrimerMatch> {
+fn find_primer_bndm(
+    cfg: &SearchConfig,
+    read: &str,
+    primer_variants: &[String],
+) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
     let region_bytes = read[..window].as_bytes();
-    let min_overlap_len = cfg.min_overlap.min(if primer_variants.is_empty() { 0 } else { primer_variants[0].len() });
+    let min_overlap_len = cfg.min_overlap.min(if primer_variants.is_empty() {
+        0
+    } else {
+        primer_variants[0].len()
+    });
 
     // Try each primer variant (from degenerate expansion)
     for primer_variant in primer_variants {
@@ -220,7 +159,8 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
     let overhang_cost = 0.5;
     let mut searcher = Searcher::<Iupac>::new_fwd_with_overhang(overhang_cost);
     // Convert error_rate to max allowed edits (generous upper bound)
-    let max_edits = ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
+    let max_edits =
+        ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
     let matches = searcher.search(primer.as_bytes(), region_bytes, max_edits);
 
     // Find best match (lowest cost)
@@ -243,18 +183,26 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
     best_match
 }
 
-/// Find primer in read using the selected algorithm
+/// Find primer in read using degenerate-aware algorithms (Myers, Sassy)
 /// Optionally uses a pre-built Myers matcher for the Myers algorithm
-pub fn find_primer(cfg: &SearchConfig, read: &str, primer: &str, myers_cache: Option<&mut Myers<u64>>) -> Option<PrimerMatch> {
+pub fn find_primer_degenerate(
+    cfg: &SearchConfig,
+    read: &str,
+    primer: &str,
+    myers_cache: Option<&mut Myers<u64>>,
+) -> Option<PrimerMatch> {
     match cfg.algorithm {
         Algorithm::Myers => find_primer_myers(cfg, read, primer, myers_cache),
         Algorithm::Sassy => find_primer_sassy(cfg, read, primer),
-        Algorithm::Bndm => find_primer_bndm(cfg, read, &expand_degenerate_bases(primer)),
+        Algorithm::Bndm => unreachable!("Exact-match algorithms require pre-expanded variants"),
     }
 }
 
-/// Find primer in read using BNDM with pre-expanded variants
-/// Used when BNDM cache is available with pre-expanded degenerate sequences
-pub fn find_primer_bndm_cached(cfg: &SearchConfig, read: &str, primer_variants: &[String]) -> Option<PrimerMatch> {
+/// Find primer in read using exact-match algorithms with pre-expanded variants
+pub fn find_primer_expanded(
+    cfg: &SearchConfig,
+    read: &str,
+    primer_variants: &[String],
+) -> Option<PrimerMatch> {
     find_primer_bndm(cfg, read, primer_variants)
 }

@@ -1,6 +1,7 @@
-use crate::search_algos::Algorithm;
 use crate::preparing_input::PrimerSet;
-use crate::search_algos::{PrimerMatch, find_primer, find_primer_bndm_cached, MyersPatternCache, BndmPatternCache};
+use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet};
+use crate::search_algos::Algorithm;
+use crate::search_algos::{PrimerMatch, find_primer_degenerate, find_primer_expanded};
 use anyhow;
 
 /// Configuration for primer search
@@ -21,18 +22,34 @@ pub struct PairedPrimerSearchResult {
     pub needs_reverse_complement: bool, // Whether read needs to be reverse complemented
 }
 
-/// Helper to search with optional cache using RefCell interior mutability
-fn search_with_cache(
+/// Search using degenerate-aware algorithms (Myers, Sassy)
+fn search_with_degenerate(
     cfg: &SearchConfig,
     read: &str,
     primer: &str,
     myers_cache: Option<&std::cell::RefCell<bio::pattern_matching::myers::long::Myers<u64>>>,
 ) -> Option<PrimerMatch> {
-    if let Some(cache) = myers_cache {
-        find_primer(cfg, read, primer, Some(&mut *cache.borrow_mut()))
-    } else {
-        find_primer(cfg, read, primer, None)
+    match cfg.algorithm {
+        Algorithm::Myers => {
+            if let Some(cache) = myers_cache {
+                let mut borrowed = cache.borrow_mut();
+                find_primer_degenerate(cfg, read, primer, Some(&mut *borrowed))
+            } else {
+                find_primer_degenerate(cfg, read, primer, None)
+            }
+        }
+        Algorithm::Sassy => find_primer_degenerate(cfg, read, primer, None),
+        Algorithm::Bndm => unreachable!("Exact-match algorithms should use search_with_expanded"),
     }
+}
+
+/// Search using exact-match algorithms with pre-expanded concrete variants
+fn search_with_expanded(
+    cfg: &SearchConfig,
+    read: &str,
+    expanded_variants: &[String],
+) -> Option<PrimerMatch> {
+    find_primer_expanded(cfg, read, expanded_variants)
 }
 
 /// Search for paired primers in a read
@@ -43,48 +60,46 @@ pub fn search_paired_primers(
     read: &str,
     primers: &PrimerSet,
     search_length: usize,
-    myers_cache: Option<&MyersPatternCache>,
-    bndm_cache: Option<&BndmPatternCache>,
+    myers_patterns: Option<&MyersPatternSet>,
+    expanded_primers: Option<&ExpandedPrimerSet>,
 ) -> PairedPrimerSearchResult {
-    // Helper to search with BNDM cache if available, otherwise use standard search
-    let search_forward = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
-        if let Some(cache) = bndm_cache {
-            find_primer_bndm_cached(cfg, read, &cache.forward)
-        } else {
-            search_with_cache(cfg, read, &primers.forward, myers_cache.map(|c| &c.forward))
-        }
-    };
+    // Route to algorithm-specific search based on configuration
+    match cfg.algorithm {
+        Algorithm::Bndm => search_paired_primers_expanded(
+            cfg,
+            read,
+            primers,
+            search_length,
+            expanded_primers.expect("Exact-match algorithms require expanded primers"),
+        ),
+        _ => search_paired_primers_degenerate(cfg, read, primers, search_length, myers_patterns),
+    }
+}
 
-    let search_reverse = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
-        if let Some(cache) = bndm_cache {
-            find_primer_bndm_cached(cfg, read, &cache.reverse)
-        } else {
-            search_with_cache(cfg, read, &primers.reverse, myers_cache.map(|c| &c.reverse))
-        }
-    };
-
-    let search_forward_rc = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
-        if let Some(cache) = bndm_cache {
-            find_primer_bndm_cached(cfg, read, &cache.forward_rc)
-        } else {
-            search_with_cache(cfg, read, &primers.forward_rc, myers_cache.map(|c| &c.forward_rc))
-        }
-    };
-
-    let search_reverse_rc = |cfg: &SearchConfig, read: &str| -> Option<PrimerMatch> {
-        if let Some(cache) = bndm_cache {
-            find_primer_bndm_cached(cfg, read, &cache.reverse_rc)
-        } else {
-            search_with_cache(cfg, read, &primers.reverse_rc, myers_cache.map(|c| &c.reverse_rc))
-        }
-    };
-
+/// Search for paired primers using Myers or Sassy (degenerate-aware)
+fn search_paired_primers_degenerate(
+    cfg: &SearchConfig,
+    read: &str,
+    primers: &PrimerSet,
+    search_length: usize,
+    myers_patterns: Option<&MyersPatternSet>,
+) -> PairedPrimerSearchResult {
     // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
-    if let Some(forward_match) = search_forward(cfg, read) {
+    if let Some(forward_match) = search_with_degenerate(
+        cfg,
+        read,
+        &primers.forward,
+        myers_patterns.map(|c| &c.forward),
+    ) {
         if let Some(reverse_match) = {
             let search_len = search_length.min(read.len());
             let end_region = &read[read.len() - search_len..];
-            if let Some(match_result) = search_reverse_rc(cfg, end_region) {
+            if let Some(match_result) = search_with_degenerate(
+                cfg,
+                end_region,
+                &primers.reverse_rc,
+                myers_patterns.map(|c| &c.reverse_rc),
+            ) {
                 let offset = read.len() - search_len;
                 Some(PrimerMatch {
                     start: offset + match_result.start,
@@ -104,11 +119,90 @@ pub fn search_paired_primers(
     }
 
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
-    if let Some(reverse_match) = search_reverse(cfg, read) {
+    if let Some(reverse_match) = search_with_degenerate(
+        cfg,
+        read,
+        &primers.reverse,
+        myers_patterns.map(|c| &c.reverse),
+    ) {
         if let Some(forward_match) = {
             let search_len = search_length.min(read.len());
             let end_region = &read[read.len() - search_len..];
-            if let Some(match_result) = search_forward_rc(cfg, end_region) {
+            if let Some(match_result) = search_with_degenerate(
+                cfg,
+                end_region,
+                &primers.forward_rc,
+                myers_patterns.map(|c| &c.forward_rc),
+            ) {
+                let offset = read.len() - search_len;
+                Some(PrimerMatch {
+                    start: offset + match_result.start,
+                    end: offset + match_result.end,
+                })
+            } else {
+                None
+            }
+        } {
+            return PairedPrimerSearchResult {
+                found: true,
+                trim_start: reverse_match.end,
+                trim_end: forward_match.start,
+                needs_reverse_complement: true,
+            };
+        }
+    }
+
+    // Not found
+    PairedPrimerSearchResult {
+        found: false,
+        trim_start: 0,
+        trim_end: 0,
+        needs_reverse_complement: false,
+    }
+}
+
+/// Search for paired primers using exact-match algorithms with pre-expanded concrete sequences
+fn search_paired_primers_expanded(
+    cfg: &SearchConfig,
+    read: &str,
+    _primers: &PrimerSet,
+    search_length: usize,
+    expanded_primers: &ExpandedPrimerSet,
+) -> PairedPrimerSearchResult {
+    // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
+    if let Some(forward_match) = search_with_expanded(cfg, read, &expanded_primers.forward) {
+        if let Some(reverse_match) = {
+            let search_len = search_length.min(read.len());
+            let end_region = &read[read.len() - search_len..];
+            if let Some(match_result) =
+                search_with_expanded(cfg, end_region, &expanded_primers.reverse_rc)
+            {
+                let offset = read.len() - search_len;
+                Some(PrimerMatch {
+                    start: offset + match_result.start,
+                    end: offset + match_result.end,
+                })
+            } else {
+                None
+            }
+        } {
+            return PairedPrimerSearchResult {
+                found: true,
+                trim_start: forward_match.end,
+                trim_end: reverse_match.start,
+                needs_reverse_complement: false,
+            };
+        }
+    }
+
+    // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
+    if let Some(reverse_match) = search_with_expanded(cfg, read, &expanded_primers.reverse) {
+        if let Some(forward_match) = {
+            let search_len = search_length.min(read.len());
+            let end_region = &read[read.len() - search_len..];
+            if let Some(match_result) =
+                search_with_expanded(cfg, end_region, &expanded_primers.forward_rc)
+            {
                 let offset = read.len() - search_len;
                 Some(PrimerMatch {
                     start: offset + match_result.start,
@@ -143,8 +237,8 @@ pub struct PrimerMatcher {
     primers: PrimerSet,
     search_length: usize,
     config: SearchConfig,
-    myers_cache: Option<MyersPatternCache>,
-    bndm_cache: Option<BndmPatternCache>,
+    myers_patterns: Option<MyersPatternSet>,
+    expanded_primers: Option<ExpandedPrimerSet>,
 }
 
 impl PrimerMatcher {
@@ -155,9 +249,16 @@ impl PrimerMatcher {
         algorithm: Algorithm,
         error_rate: f64,
         min_overlap: usize,
-        myers_cache: Option<MyersPatternCache>,
-        bndm_cache: Option<BndmPatternCache>,
+        myers_patterns: Option<MyersPatternSet>,
+        expanded_primers: Option<ExpandedPrimerSet>,
     ) -> anyhow::Result<Self> {
+        // Ensure expanded primers are available when BNDM is selected
+        let expanded_primers = match (algorithm, expanded_primers) {
+            (Algorithm::Bndm, Some(exp)) => Some(exp),
+            (Algorithm::Bndm, None) => Some(ExpandedPrimerSet::new(&primers)),
+            (_, exp) => exp,
+        };
+
         Ok(Self {
             primers,
             search_length,
@@ -167,13 +268,20 @@ impl PrimerMatcher {
                 window: search_length,
                 min_overlap,
             },
-            myers_cache,
-            bndm_cache,
+            myers_patterns,
+            expanded_primers,
         })
     }
 
     /// Search for paired primers in a sequence
     pub fn search_primers(&self, seq: &str) -> PairedPrimerSearchResult {
-        search_paired_primers(&self.config, seq, &self.primers, self.search_length, self.myers_cache.as_ref(), self.bndm_cache.as_ref())
+        search_paired_primers(
+            &self.config,
+            seq,
+            &self.primers,
+            self.search_length,
+            self.myers_patterns.as_ref(),
+            self.expanded_primers.as_ref(),
+        )
     }
 }

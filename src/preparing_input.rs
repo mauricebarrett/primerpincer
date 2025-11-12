@@ -1,6 +1,9 @@
 //! Utilities for preparing primer input data
 
 use once_cell::sync::Lazy;
+use std::cell::RefCell;
+
+use bio::pattern_matching::myers::{MyersBuilder, long::Myers};
 
 /// Lookup table for reverse complement transformation
 /// Maps each ASCII byte to its reverse complement
@@ -89,9 +92,80 @@ impl PrimerSet {
     }
 }
 
+/// Expanded primer set with all concrete variants for exact-matching algorithms
+/// Each primer may be degenerate, so we store Vec of concrete sequences
+/// This is used by algorithms like BNDM that require concrete strings
+#[derive(Debug, Clone)]
+pub struct ExpandedPrimerSet {
+    pub forward: Vec<String>,
+    pub reverse: Vec<String>,
+    pub forward_rc: Vec<String>,
+    pub reverse_rc: Vec<String>,
+}
+
+impl ExpandedPrimerSet {
+    /// Create a new expanded primer set by expanding degenerate primers into all concrete variants
+    pub fn new(primers: &PrimerSet) -> Self {
+        Self {
+            forward: expand_degenerate_bases(&primers.forward),
+            reverse: expand_degenerate_bases(&primers.reverse),
+            forward_rc: expand_degenerate_bases(&primers.forward_rc),
+            reverse_rc: expand_degenerate_bases(&primers.reverse_rc),
+        }
+    }
+}
+
+/// Myers pattern matchers prepared for all four primer orientations
+#[derive(Clone)]
+pub struct MyersPatternSet {
+    pub forward: RefCell<Myers<u64>>,
+    pub reverse: RefCell<Myers<u64>>,
+    pub forward_rc: RefCell<Myers<u64>>,
+    pub reverse_rc: RefCell<Myers<u64>>,
+}
+
+/// Global Myers builder with configured ambiguity tables
+pub(crate) static MYERS_BUILDER: Lazy<MyersBuilder> = Lazy::new(|| {
+    let mut builder = MyersBuilder::new();
+
+    builder.ambig(b'M', b"AC");
+    builder.ambig(b'R', b"AG");
+    builder.ambig(b'W', b"AT");
+    builder.ambig(b'S', b"CG");
+    builder.ambig(b'Y', b"CT");
+    builder.ambig(b'K', b"GT");
+    builder.ambig(b'V', b"ACG");
+    builder.ambig(b'H', b"ACT");
+    builder.ambig(b'D', b"AGT");
+    builder.ambig(b'B', b"CGT");
+    builder.ambig(b'N', b"ACGT");
+
+    builder.ambig(b'A', b"MRWVHDN");
+    builder.ambig(b'C', b"MSYVHBN");
+    builder.ambig(b'G', b"RSKDVBN");
+    builder.ambig(b'T', b"WYKDHBN");
+
+    builder
+});
+
+pub(crate) fn build_myers_matcher(pattern: &[u8]) -> Myers<u64> {
+    MYERS_BUILDER.build_long(pattern)
+}
+
+impl MyersPatternSet {
+    pub fn new(primers: &PrimerSet) -> Self {
+        Self {
+            forward: RefCell::new(build_myers_matcher(primers.forward.as_bytes())),
+            reverse: RefCell::new(build_myers_matcher(primers.reverse.as_bytes())),
+            forward_rc: RefCell::new(build_myers_matcher(primers.forward_rc.as_bytes())),
+            reverse_rc: RefCell::new(build_myers_matcher(primers.reverse_rc.as_bytes())),
+        }
+    }
+}
+
 /// Expand IUPAC degenerative codes into all concrete base combinations
 /// Returns all possible sequences represented by the degenerate code
-/// 
+///
 /// # Example
 /// "TCCTAGGGC" → ["TCCTAGGGC"] (no degeneracy)
 /// "TCCTNGGGC" → ["TCCTAGGGC", "TCCTCGGGC", "TCCTGGGGC", "TCCTTGGGC"]
@@ -114,17 +188,19 @@ pub fn expand_degenerate_bases(seq: &str) -> Vec<String> {
             'H' => vec!['A', 'C', 'T'],      // not G
             'V' => vec!['A', 'C', 'G'],      // not T
             'N' => vec!['A', 'C', 'G', 'T'], // aNy base
-            _ => vec![base],                  // unknown or already concrete
+            _ => vec![base],                 // unknown or already concrete
         }
     };
 
-    let bases: Vec<Vec<char>> = seq
-        .chars()
-        .map(|c| expand_base(c))
-        .collect();
+    let bases: Vec<Vec<char>> = seq.chars().map(|c| expand_base(c)).collect();
 
     // Generate cartesian product of all base options
-    fn cartesian_product(bases: &[Vec<char>], index: usize, current: String, result: &mut Vec<String>) {
+    fn cartesian_product(
+        bases: &[Vec<char>],
+        index: usize,
+        current: String,
+        result: &mut Vec<String>,
+    ) {
         if index == bases.len() {
             result.push(current);
             return;

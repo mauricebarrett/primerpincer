@@ -1,5 +1,5 @@
-use clap::Parser;
 use crate::search_algos::Algorithm;
+use clap::Parser;
 
 /// 🦀 PrimerPincer — A command-line tool for the rapid trimming of primers from long read amplicons
 #[derive(Parser, Debug)]

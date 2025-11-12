@@ -1,7 +1,6 @@
-use crate::search_algos::Algorithm;
-use crate::preparing_input::{PrimerSet, reverse_complement};
+use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet, reverse_complement};
 use crate::primer_search::{PairedPrimerSearchResult, PrimerMatcher};
-use crate::search_algos::{MyersPatternCache, BndmPatternCache};
+use crate::search_algos::Algorithm;
 use anyhow;
 use paraseq::Record;
 use paraseq::parallel::{IntoProcessError, ParallelProcessor};
@@ -13,7 +12,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// Convert byte slice to string without UTF-8 validation.
-/// 
+///
 /// SAFETY: This function is safe because:
 /// - FASTQ sequences contain only A, C, G, T, N (all ASCII)
 /// - FASTQ quality strings contain Phred+33 values (all ASCII)
@@ -40,7 +39,7 @@ fn trim_sequence<'a>(
     // Trim from both ends first (using original read positions)
     // trim_start: position to start keeping (trim everything before this)
     // trim_end: position to stop keeping (trim everything from this position to end)
-    
+
     // Ensure we have valid trim positions
     let trim_end = result.trim_end.min(seq.len());
     if trim_end <= result.trim_start {
@@ -115,17 +114,37 @@ impl TimingStats {
         let write_s = self.write_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
         let processed = self.records_processed.load(Ordering::Relaxed);
         let trimmed = self.records_trimmed.load(Ordering::Relaxed);
-        
+
         let total_time = read_time_s + search_s + trim_s + write_s;
 
         eprintln!("\n📊 Performance Statistics:");
         eprintln!("   Records processed: {}", processed);
-        eprintln!("   Records trimmed: {} ({:.1}%)", trimmed, (trimmed as f64 / processed as f64 * 100.0));
+        eprintln!(
+            "   Records trimmed: {} ({:.1}%)",
+            trimmed,
+            (trimmed as f64 / processed as f64 * 100.0)
+        );
         eprintln!("\n⏱️  Time Breakdown (cumulative across all threads):");
-        eprintln!("   Input reading: {:.2}s ({:.1}%)", read_time_s, read_time_s / total_time * 100.0);
-        eprintln!("   Primer searching: {:.2}s ({:.1}%)", search_s, search_s / total_time * 100.0);
-        eprintln!("   Sequence trimming: {:.2}s ({:.1}%)", trim_s, trim_s / total_time * 100.0);
-        eprintln!("   Output writing: {:.2}s ({:.1}%)", write_s, write_s / total_time * 100.0);
+        eprintln!(
+            "   Input reading: {:.2}s ({:.1}%)",
+            read_time_s,
+            read_time_s / total_time * 100.0
+        );
+        eprintln!(
+            "   Primer searching: {:.2}s ({:.1}%)",
+            search_s,
+            search_s / total_time * 100.0
+        );
+        eprintln!(
+            "   Sequence trimming: {:.2}s ({:.1}%)",
+            trim_s,
+            trim_s / total_time * 100.0
+        );
+        eprintln!(
+            "   Output writing: {:.2}s ({:.1}%)",
+            write_s,
+            write_s / total_time * 100.0
+        );
         eprintln!("   Total accounted: {:.2}s", total_time);
     }
 }
@@ -148,8 +167,8 @@ impl PrimerTrimmer {
         algorithm: Algorithm,
         error_rate: f64,
         min_overlap: usize,
-        myers_cache: Option<MyersPatternCache>,
-        bndm_cache: Option<BndmPatternCache>,
+        myers_patterns: Option<MyersPatternSet>,
+        expanded_primers: Option<ExpandedPrimerSet>,
     ) -> anyhow::Result<Self> {
         let matcher = PrimerMatcher::new(
             primers,
@@ -157,8 +176,8 @@ impl PrimerTrimmer {
             algorithm,
             error_rate,
             min_overlap,
-            myers_cache,
-            bndm_cache,
+            myers_patterns,
+            expanded_primers,
         )?;
 
         Ok(Self {
@@ -188,18 +207,20 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
         // Time primer searching
         let search_start = Instant::now();
         let search_result = self.matcher.search_primers(seq);
-        self.timing_stats.add_search_time(search_start.elapsed().as_nanos() as u64);
-        
+        self.timing_stats
+            .add_search_time(search_start.elapsed().as_nanos() as u64);
+
         self.timing_stats.increment_processed();
 
         // Time trimming operations
         let trim_start = Instant::now();
         let trimmed = trim_sequence(seq, qual, &search_result);
-        self.timing_stats.add_trim_time(trim_start.elapsed().as_nanos() as u64);
+        self.timing_stats
+            .add_trim_time(trim_start.elapsed().as_nanos() as u64);
 
         if let Some((trimmed_seq, trimmed_qual)) = trimmed {
             self.timing_stats.increment_trimmed();
-            
+
             // Time write operations (writing to local buffer)
             let write_start = Instant::now();
             use std::fmt::Write;
@@ -208,7 +229,8 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
             writeln!(self.local_output, "{}", trimmed_seq).map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "+").map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "{}", trimmed_qual).map_err(|e| e.into_process_error())?;
-            self.timing_stats.add_write_time(write_start.elapsed().as_nanos() as u64);
+            self.timing_stats
+                .add_write_time(write_start.elapsed().as_nanos() as u64);
         }
 
         Ok(())
@@ -216,12 +238,15 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
 
     fn on_batch_complete(&mut self) -> paraseq::parallel::Result<()> {
         let write_start = Instant::now();
-        let mut global_out = self.global_output.lock()
+        let mut global_out = self
+            .global_output
+            .lock()
             .expect("Failed to acquire write lock on output");
         global_out.write_all(self.local_output.as_bytes())?;
         global_out.flush()?;
         self.local_output.clear();
-        self.timing_stats.add_write_time(write_start.elapsed().as_nanos() as u64);
+        self.timing_stats
+            .add_write_time(write_start.elapsed().as_nanos() as u64);
         Ok(())
     }
 }
