@@ -1,3 +1,10 @@
+## [0.4.1](https://github.com/mauricebarrett/primerpincer/compare/v0.4.0...v0.4.1) (2025-11-12)
+
+
+### Bug Fixes
+
+* Correct author email format in Cargo.toml ([ef71ee4](https://github.com/mauricebarrett/primerpincer/commit/ef71ee462a8e9faecc65d0fe23d3bd84ab7487b1))
+
 # [0.4.0](https://github.com/mauricebarrett/primerpincer/compare/v0.3.0...v0.4.0) (2025-11-12)
 
 
