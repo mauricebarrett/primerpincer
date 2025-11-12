@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/mauricebarrett/primerpincer/compare/v0.3.0...v0.4.0) (2025-11-12)
+
+
+### Features
+
+* Enhance primer processing with expanded primer support and niffler integration ([26b9a0d](https://github.com/mauricebarrett/primerpincer/commit/26b9a0d615637ea38b05fd46c8d0293400c198d7))
+
 # [0.3.0](https://github.com/mauricebarrett/primerpincer/compare/v0.2.0...v0.3.0) (2025-11-08)
 
 
