@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/mauricebarrett/primerpincer/compare/v0.4.1...v0.5.0) (2025-11-12)
+
+
+### Features
+
+* add scalar feature to sassy for easier installation without RUSTFLAGS ([4f1609d](https://github.com/mauricebarrett/primerpincer/commit/4f1609d433fc4d5d83817af75a42dcde5c43c969))
+
 ## [0.4.1](https://github.com/mauricebarrett/primerpincer/compare/v0.4.0...v0.4.1) (2025-11-12)
 
 
