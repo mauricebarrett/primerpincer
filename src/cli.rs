@@ -1,3 +1,4 @@
+use crate::compression::OutputCompression;
 use crate::search_algos::Algorithm;
 use clap::Parser;
 
@@ -78,4 +79,14 @@ pub struct Cli {
     /// Number of threads to use
     #[arg(short = 't', long = "threads", value_name = "INT", default_value_t = 4)]
     pub threads: usize,
+
+    /// Compression format for the output FASTQ
+    #[arg(
+        long = "compression",
+        short = 'c',
+        value_enum,
+        help = "Compression format for the output FASTQ (defaults to gzip)",
+        default_value_t = OutputCompression::Gzip
+    )]
+    pub compression: OutputCompression,
 }

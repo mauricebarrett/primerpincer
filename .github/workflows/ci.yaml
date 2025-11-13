@@ -25,4 +25,6 @@ jobs:
         uses: cocogitto/cocogitto-action@v3
         with:
           check: true
-          args: HEAD~1..HEAD  # Only check the latest commit message
+        env:
+          COG_FROM: HEAD~1
+          COG_TO: HEAD

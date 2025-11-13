@@ -27,8 +27,7 @@ exclude = [
 anyhow = "1.0.100"
 bio = "3.0.0"
 clap = { version = "4.5.51", features = ["derive"] }
-flate2 = "1.1.5"
-niffler = "2.5"
+niffler = "3.0.0"
 once_cell = "1.19"
 paraseq = { version = "0.4.3", default-features = false, features = ["anyhow", "niffler"] }
 sassy = { version = "0.1.6", features = ["scalar"] }
@@ -42,4 +41,3 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
-

@@ -1,8 +1,8 @@
+use crate::compression::OutputCompression;
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet};
 use crate::primer_trim::PrimerTrimmer;
 use crate::search_algos::Algorithm;
-use flate2::Compression;
-use flate2::write::GzEncoder;
+use niffler::send;
 use paraseq::fastx;
 use paraseq::prelude::*;
 use std::fs::File;
@@ -25,6 +25,7 @@ pub fn process_fastq(
     algorithm: Algorithm,
     error_rate: f64,
     min_overlap: usize,
+    compression: OutputCompression,
     threads: usize,
 ) -> anyhow::Result<()> {
     // Create output directory if it doesn't exist
@@ -32,16 +33,14 @@ pub fn process_fastq(
         std::fs::create_dir_all(parent)?;
     }
 
-    // Open output FASTQ file with 8MB buffer and wrap with gzip encoder if needed
+    // Open output FASTQ file with 8MB buffer and wrap with the requested compression codec.
     let output_file = File::create(output_path)?;
-    let output: Box<dyn Write + Send> = if output_path.ends_with(".gz") {
-        Box::new(GzEncoder::new(
-            BufWriter::with_capacity(OUTPUT_BUFFER_SIZE, output_file),
-            Compression::fast(),
-        ))
-    } else {
-        Box::new(BufWriter::with_capacity(OUTPUT_BUFFER_SIZE, output_file))
-    };
+    let buffered = BufWriter::with_capacity(OUTPUT_BUFFER_SIZE, output_file);
+    let output: Box<dyn Write + Send> = send::get_writer(
+        Box::new(buffered),
+        compression.to_format(),
+        compression.default_level(),
+    )?;
 
     let setup_start = Instant::now();
     let primers = PrimerSet::new(forward_primer, reverse_primer);
@@ -55,7 +54,7 @@ pub fn process_fastq(
     };
 
     // Build expanded primer set once if using BNDM algorithm
-	let expanded_primers = if matches!(algorithm, Algorithm::Bndm | Algorithm::Hamming) {
+    let expanded_primers = if matches!(algorithm, Algorithm::Bndm | Algorithm::Hamming) {
         eprintln!("🔧 Pre-expanding degenerate primers for BNDM...");
         Some(ExpandedPrimerSet::new(&primers))
     } else {
@@ -97,7 +96,7 @@ pub fn process_fastq(
     // Use niffler for automatic compression detection (gzip, zstd, xz, bzip2)
     let read_start = Instant::now();
     let processing_start = Instant::now();
-    
+
     let input_file = File::open(input_path)?;
     // Cast to Box<dyn Read + Send> for parallel processing compatibility
     let input_boxed: Box<dyn std::io::Read + Send> = Box::new(input_file);

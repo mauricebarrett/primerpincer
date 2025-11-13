@@ -34,8 +34,8 @@ impl Default for Algorithm {
 }
 use crate::preparing_input::build_myers_matcher;
 use crate::primer_search::SearchConfig;
-use bio::pattern_matching::bndm::BNDM;
 use bio::alignment::distance::simd::hamming as simd_hamming;
+use bio::pattern_matching::bndm::BNDM;
 use bio::pattern_matching::myers::long::Myers;
 use sassy::{Searcher, profiles::Iupac};
 
@@ -46,8 +46,6 @@ pub struct PrimerMatch {
     pub start: usize,
     pub end: usize,
 }
-
-
 
 /// Find primer in read using Sassy SIMD-accelerated search
 fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
@@ -155,62 +153,62 @@ fn find_primer_hamming(
     read: &str,
     primer_variants: &[String],
 ) -> Option<PrimerMatch> {
-	let window = cfg.window.min(read.len());
-	let region_bytes = read[..window].as_bytes();
+    let window = cfg.window.min(read.len());
+    let region_bytes = read[..window].as_bytes();
 
-	// Guard: no variants provided
-	if primer_variants.is_empty() {
-		return None;
-	}
+    // Guard: no variants provided
+    if primer_variants.is_empty() {
+        return None;
+    }
 
-	let min_overlap_len = cfg.min_overlap.min(primer_variants[0].len());
+    let min_overlap_len = cfg.min_overlap.min(primer_variants[0].len());
 
-	// Track best match across all variants and positions
-	let mut best_match: Option<PrimerMatch> = None;
-	let mut best_distance: u64 = u64::MAX;
+    // Track best match across all variants and positions
+    let mut best_match: Option<PrimerMatch> = None;
+    let mut best_distance: u64 = u64::MAX;
 
-	for primer_variant in primer_variants {
-		let primer_bytes = primer_variant.as_bytes();
-		let primer_len = primer_bytes.len();
+    for primer_variant in primer_variants {
+        let primer_bytes = primer_variant.as_bytes();
+        let primer_len = primer_bytes.len();
 
-		// Slide the primer across the searchable region (no indels; compare fixed-length windows)
-		for start in 0..window {
-			let max_overlap = window - start;
-			if max_overlap == 0 {
-				break;
-			}
-			let overlap_len = primer_len.min(max_overlap);
-			if overlap_len < min_overlap_len {
-				continue;
-			}
+        // Slide the primer across the searchable region (no indels; compare fixed-length windows)
+        for start in 0..window {
+            let max_overlap = window - start;
+            if max_overlap == 0 {
+                break;
+            }
+            let overlap_len = primer_len.min(max_overlap);
+            if overlap_len < min_overlap_len {
+                continue;
+            }
 
-			// Compute Hamming distance on the overlapping portion
-			let p_slice = &primer_bytes[..overlap_len];
-			let r_slice = &region_bytes[start..start + overlap_len];
-			let distance: u64 = simd_hamming(p_slice, r_slice);
+            // Compute Hamming distance on the overlapping portion
+            let p_slice = &primer_bytes[..overlap_len];
+            let r_slice = &region_bytes[start..start + overlap_len];
+            let distance: u64 = simd_hamming(p_slice, r_slice);
 
-			// Check error rate threshold
-			let error_rate = (distance as f64) / (overlap_len as f64);
-			if error_rate > cfg.error_rate {
-				continue;
-			}
+            // Check error rate threshold
+            let error_rate = (distance as f64) / (overlap_len as f64);
+            if error_rate > cfg.error_rate {
+                continue;
+            }
 
-			if distance < best_distance {
-				best_distance = distance;
-				best_match = Some(PrimerMatch {
-					start,
-					end: start + overlap_len - 1, // inclusive end
-				});
+            if distance < best_distance {
+                best_distance = distance;
+                best_match = Some(PrimerMatch {
+                    start,
+                    end: start + overlap_len - 1, // inclusive end
+                });
 
-				// Early exit on perfect match
-				if best_distance == 0 {
-					return best_match;
-				}
-			}
-		}
-	}
+                // Early exit on perfect match
+                if best_distance == 0 {
+                    return best_match;
+                }
+            }
+        }
+    }
 
-	best_match
+    best_match
 }
 
 // Find primer in read using BNDM for exact matching
@@ -245,7 +243,6 @@ fn find_primer_bndm(
     None
 }
 
-
 /// Find primer in read using degenerate-aware algorithms (Myers, Sassy)
 /// Optionally uses a pre-built Myers matcher for the Myers algorithm
 pub fn find_primer_degenerate(
@@ -257,8 +254,8 @@ pub fn find_primer_degenerate(
     match cfg.algorithm {
         Algorithm::Myers => find_primer_myers(cfg, read, primer, myers_cache),
         Algorithm::Sassy => find_primer_sassy(cfg, read, primer),
-		Algorithm::Bndm => unreachable!("Requires pre-expanded variants"),
-		Algorithm::Hamming => unreachable!("Requires pre-expanded variants"),
+        Algorithm::Bndm => unreachable!("Requires pre-expanded variants"),
+        Algorithm::Hamming => unreachable!("Requires pre-expanded variants"),
     }
 }
 
@@ -268,9 +265,9 @@ pub fn find_primer_expanded(
     read: &str,
     primer_variants: &[String],
 ) -> Option<PrimerMatch> {
-	match cfg.algorithm {
-		Algorithm::Bndm => find_primer_bndm(cfg, read, primer_variants),
-		Algorithm::Hamming => find_primer_hamming(cfg, read, primer_variants),
-		_ => unreachable!("Degenerate-aware algorithms should use find_primer_degenerate"),
-	}
+    match cfg.algorithm {
+        Algorithm::Bndm => find_primer_bndm(cfg, read, primer_variants),
+        Algorithm::Hamming => find_primer_hamming(cfg, read, primer_variants),
+        _ => unreachable!("Degenerate-aware algorithms should use find_primer_degenerate"),
+    }
 }

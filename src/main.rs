@@ -1,11 +1,12 @@
-use clap::Parser;
 mod cli;
+mod compression;
 mod io;
 mod preparing_input;
 mod primer_search;
 mod primer_trim;
 mod search_algos;
 
+use clap::Parser;
 use cli::Cli;
 use io::process_fastq;
 
@@ -25,6 +26,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Search length: {}", args.search_length);
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
+    eprintln!("Output compression: {:?}", args.compression);
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
 
     // Process FASTQ file with primer trimming
@@ -37,6 +39,7 @@ fn main() -> anyhow::Result<()> {
         args.algorithm,
         args.error_rate,
         args.overlap,
+        args.compression,
         args.threads,
     )?;
 
