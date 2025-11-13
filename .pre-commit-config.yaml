@@ -1,0 +1,46 @@
+# Pre-commit hooks configuration for PrimerPincer
+repos:
+  # Rust formatting and checking
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        name: Cargo format check
+        args: ['--all', '--', '--check']
+
+      - id: cargo-check
+        name: Cargo check
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+
+      - id: end-of-file-fixer
+        name: Fix end of files
+
+      - id: check-yaml
+        name: Check YAML syntax
+
+      - id: check-toml
+        name: Check TOML syntax
+
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+
+      - id: mixed-line-ending
+        name: Check line endings
+        args: ['--fix=lf']
+
+  # Local hooks (using tools installed on system)
+  - repo: local
+    hooks:
+      - id: cocogitto-verify
+        name: Cocogitto commit message check
+        entry: cog verify
+        language: system
+        stages: [commit-msg]
+        args: ['--file']
