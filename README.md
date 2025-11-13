@@ -31,7 +31,7 @@ PrimerPincer is a Rust-based command-line tool designed to efficiently detect an
 
 In amplicon-based microbiome studies, such as those targeting 16S, ITS, 18S, or COI regions, primer removal is a crucial preprocessing step. The phylogenetically conserved regions where primers bind are typically removed because:
 
-1. They are phylogenetically informative, and their removal can improve the accuracy of downstream taxonomic classification.
+1. They are phylogenetically uninformative, and their removal can improve the accuracy of downstream taxonomic classification.
 2. They are susceptible to PCR-induced mutagenesis, and therefore may not accurately represent true biological sequences.
 3. They often contain uninformative sequence data, and removing them can enhance computational performance in subsequent analyses.
 
@@ -41,78 +41,40 @@ PrimerPincer is designed to scale with these demands, providing rapid and accura
 
 ## Features
 🦀 Rust based
-Lighting fast
-        - Paralisism uising Paraseq
+Lighting fast  
+        - Paralisism uising Paraseq  
 Multiple choic of algoritm
-
-
-
 
 
 
 ## Usage
 
 ```text
-PrimerPincer - a CLI primer trimming tool for long-read sequencing data
+PrimerPincer - a CLI tool for the rapid identification and removal of paired primers from long read amplicons
 
 Usage: primerpincer [OPTIONS] --input <FILE> --output <FILE> --forward <SEQUENCE> --reverse <SEQUENCE>
 
 Options:
-  -i, --input <FILE>
-          Input FASTQ file
+  -i, --input <FILE>           Input FASTQ file
+  -o, --output <FILE>          Output FASTQ file
+  -f, --forward <SEQUENCE>     Forward primer sequence (5' to 3' orientation)
+  -r, --reverse <SEQUENCE>     Reverse primer sequence (5' to 3' orientation)
+  -a, --algorithm <ALGORITHM>  Algorithm to use for primer matching [default: sassy] [possible values: sassy, myers, hamming, bndm]
+  -e, --error-rate <FLOAT>     Maximum error rate in primer matching (e.g., 0.15 for 15% errors) [default: 0.15]
+  -l, --search-length <INT>    Length to search for primer at start and end of sequence [default: 100]
+  -O, --overlap <MINLENGTH>    Minimum overlap length. Require MINLENGTH bases of the primer to match (default 6) [default: 6]
+  -t, --threads <INT>          Number of threads to use [default: 4]
+  -h, --help                   Print help (see more with '--help')
+  -V, --version                Print version
 
-  -o, --output <FILE>
-          Output FASTQ file
-
-  -f, --forward <SEQUENCE>
-          Forward primer sequence (5' to 3' orientation)
-
-  -r, --reverse <SEQUENCE>
-          Reverse primer sequence (5' to 3' orientation)
-
-  -a, --algorithm <ALGORITHM>
-          Algorithm to use for primer matching
-
-          Possible values:
-          - myers: Use Myers bit-parallel algorithm for approximate matching
-          - sassy: Use Sassy SIMD-accelerated search (fastest, requires AVX2/NEON)
-          - bndm:  Use BNDM for exact matching (fastest for short exact matches)
-          
-          [default: sassy]
-
-  -e, --error-rate <FLOAT>
-          Maximum error rate in primer matching (e.g., 0.15 for 15% errors)
-          
-          [default: 0.15]
-
-  -l, --search-length <INT>
-          Length to search for primer at start and end of sequence
-          
-          [default: 100]
-
-  -O, --overlap <MINLENGTH>
-          Minimum overlap length. Require MINLENGTH bases of the primer to match (like cutadapt -O)
-          
-          [default: 6]
-
-  -t, --threads <INT>
-          Number of threads to use
-          
-          [default: 4]
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -V, --version
-          Print version
 ```
 
 ## Examples
 
 ```bash
-pixi run cargo run -- \
+primerpincer
  -i ./example_data/raw/ATCC-MSA1003-toy-example.fastq.gz \
- -o ./example_data/primerpincer_proccesed/ATCC-MSA1003-toy-example.fastq.gz \
+ -o ~/primerpincer_proccesed/ATCC-MSA1003-toy-example.fastq.gz \
  -f "AGRGTTYGATYMTGGCTCAG" \
  -r "RGYTACCTTGTTACGACTT"  \
  -t 12 \
@@ -123,3 +85,27 @@ pixi run cargo run -- \
 fqkit size -v ./example_data/primerpincer/ATCC-MSA1003-toy-example.fastq.gz 
 
 ```
+
+## Contributing
+
+Contributions to PrimerPincer are welcome! Here are some ways you can contribute:
+
+### Reporting Issues
+- Report bugs or request features by opening an issue on GitHub
+- Include example data and error messages when reporting bugs
+- Describe your use case when requesting new features
+
+### Contributing Code
+1. Fork the repository
+2. Create a new branch for your feature (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests to ensure everything works
+5. Commit your changes (`git commit -m 'Add some amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+
+## Citation
+
+If you use PrimerPincer in your research, please cite:
+
