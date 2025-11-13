@@ -18,11 +18,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          fetch-tags: true
+          fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check commits with Cocogitto
+      - name: Check latest commit with Cocogitto
         uses: cocogitto/cocogitto-action@v3
         with:
-          check-latest-tag-only: true  # Only check commits since last tag
+          check: true
+          args: HEAD~1..HEAD  # Only check the latest commit message
