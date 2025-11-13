@@ -1,0 +1,15 @@
+{
+  "name": "primerpincer",
+  "version": "0.0.0-development",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mauricebarrett/primerpincer.git"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "semantic-release": "^22.0.0"
+  }
+}
