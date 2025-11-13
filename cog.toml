@@ -1,0 +1,62 @@
+# Cocogitto configuration for PrimerPincer
+
+# Hooks must be at the very top, before any sections
+pre_bump_hooks = [
+    "cargo check",  # Ensure project compiles
+]
+post_bump_hooks = [
+    "cargo build --release",  # Build after version bump
+]
+
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+repository = "primerpincer"
+owner = "mauricebarrett"
+
+# Commit types that trigger version bumps
+[commit_types]
+
+[commit_types.feat]
+changelog_title = "Features"
+bump = "minor"  # feat: triggers 0.5.0 -> 0.6.0
+
+[commit_types.fix]
+changelog_title = "Bug Fixes"  
+bump = "patch"  # fix: triggers 0.5.0 -> 0.5.1
+
+[commit_types.docs]
+changelog_title = "Documentation"
+bump = "patch"
+
+[commit_types.style]
+changelog_title = "Styling"
+bump = "patch"
+
+[commit_types.refactor]
+changelog_title = "Refactoring"
+bump = "patch"
+
+[commit_types.perf]
+changelog_title = "Performance"
+bump = "minor"
+
+[commit_types.test]
+changelog_title = "Tests"
+bump = "patch"
+
+[commit_types.chore]
+changelog_title = "Miscellaneous"
+bump = "patch"
+omit_from_changelog = true
+
+[commit_types.ci]
+changelog_title = "CI/CD"
+bump = "patch"
+omit_from_changelog = true
+
+[commit_types.build]
+changelog_title = "Build"
+bump = "patch"
+omit_from_changelog = true
