@@ -8,15 +8,21 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   check-commits:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check PR commits
+      - name: Check commits with Cocogitto
         uses: cocogitto/cocogitto-action@v3
         with:
           check-latest-tag-only: true  # Only check commits since last tag
