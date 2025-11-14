@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/mauricebarrett/primerpincer/compare/v0.6.0...v0.6.1) (2025-11-14)
+
+
+### Bug Fixes
+
+* correct typo in documentation for pattern matching algorithm ([0aa64ae](https://github.com/mauricebarrett/primerpincer/commit/0aa64ae00af57545c544e5f2164654619b4ff678))
+
 # [0.6.0](https://github.com/mauricebarrett/primerpincer/compare/v0.5.0...v0.6.0) (2025-11-14)
 
 
