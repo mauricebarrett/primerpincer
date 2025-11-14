@@ -1,3 +1,13 @@
+# [0.6.0](https://github.com/mauricebarrett/primerpincer/compare/v0.5.0...v0.6.0) (2025-11-14)
+
+
+### Features
+
+* added the option to determine compression format with niffler ([1303e4b](https://github.com/mauricebarrett/primerpincer/commit/1303e4ba6c9be6f3dd0d0b3fccc6cca21436a6a4))
+* added the option to determine compression format with niffler ([3780535](https://github.com/mauricebarrett/primerpincer/commit/37805359c9fd595d25aa72e0c209d32d2010413b))
+* added the option to determine compression format with niffler ([8c5c3d3](https://github.com/mauricebarrett/primerpincer/commit/8c5c3d37c989870a045cf158ef41c099e3793ba6))
+* added the option to determine compression format with niffler ([8912f5f](https://github.com/mauricebarrett/primerpincer/commit/8912f5ff08f0a433ee17a6f24810d4f2318fd84d))
+
 # [0.5.0](https://github.com/mauricebarrett/primerpincer/compare/v0.4.1...v0.5.0) (2025-11-12)
 
 
