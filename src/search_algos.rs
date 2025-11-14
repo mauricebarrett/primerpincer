@@ -46,8 +46,7 @@ pub struct PrimerMatch {
 fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
-    // Convert to Vec<u8> to satisfy RcSearchAble trait bound (requires Sized)
-    let region_bytes = read.as_bytes()[..window].to_vec();
+    let region_bytes = &read.as_bytes()[..window];
 
     // Use overhang cost to handle partial primer matches at read boundaries
     // Overhang cost of 0.5 means each overhanging character is penalized by 0.5
