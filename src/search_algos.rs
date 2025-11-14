@@ -51,7 +51,8 @@ pub struct PrimerMatch {
 fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
-    let region_bytes = &read[..window].as_bytes();
+    // Convert to Vec<u8> to satisfy RcSearchAble trait bound (requires Sized)
+    let region_bytes = read.as_bytes()[..window].to_vec();
 
     // Use overhang cost to handle partial primer matches at read boundaries
     // Overhang cost of 0.5 means each overhanging character is penalized by 0.5
@@ -61,7 +62,7 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
     // Convert error_rate to max allowed edits (generous upper bound)
     let max_edits =
         ((primer.len() as f64) * cfg.error_rate / (1.0 - cfg.error_rate)).ceil() as usize;
-    let matches = searcher.search(primer.as_bytes(), region_bytes, max_edits);
+    let matches = searcher.search(primer.as_bytes(), &region_bytes, max_edits);
 
     // Find best match (lowest cost)
     let best_match = matches.iter().min_by_key(|m| m.cost).and_then(|m| {
@@ -93,7 +94,7 @@ fn find_primer_myers(
 ) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
-    let region_bytes = read[..window].as_bytes();
+    let region_bytes = &read.as_bytes()[..window];
     let min_overlap_len = cfg.min_overlap.min(primer.len());
 
     // Calculate max distance based on error rate
@@ -154,7 +155,7 @@ fn find_primer_hamming(
     primer_variants: &[String],
 ) -> Option<PrimerMatch> {
     let window = cfg.window.min(read.len());
-    let region_bytes = read[..window].as_bytes();
+    let region_bytes = &read.as_bytes()[..window];
 
     // Guard: no variants provided
     if primer_variants.is_empty() {
@@ -222,7 +223,7 @@ fn find_primer_bndm(
 ) -> Option<PrimerMatch> {
     // Search in the first 'window' bases
     let window = cfg.window.min(read.len());
-    let region_bytes = read[..window].as_bytes();
+    let region_bytes = &read.as_bytes()[..window];
 
     // Try each primer variant (from degenerate expansion)
     for primer_variant in primer_variants {
