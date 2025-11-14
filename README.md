@@ -41,8 +41,8 @@ PrimerPincer is designed to scale with these demands, providing rapid and accura
 
 ## Features
 🦀 Rust based
-Lighting fast  
-        - Paralisism uising Paraseq  
+Lighting fast
+        - Paralisism uising Paraseq
 Multiple choic of algoritm
 
 
@@ -82,7 +82,7 @@ primerpincer
  -O 6 \
  -l 500
 
-fqkit size -v ./example_data/primerpincer/ATCC-MSA1003-toy-example.fastq.gz 
+fqkit size -v ./example_data/primerpincer/ATCC-MSA1003-toy-example.fastq.gz
 
 ```
 
@@ -109,3 +109,5 @@ Contributions to PrimerPincer are welcome! Here are some ways you can contribute
 
 If you use PrimerPincer in your research, please cite:
 
+
+## Licence
