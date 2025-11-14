@@ -17,7 +17,7 @@ use clap::ValueEnum;
 /// Algorithm selection for primer matching
 #[derive(ValueEnum, Clone, Debug, Copy)]
 pub enum Algorithm {
-    /// Pattern matching algorithm as described in Beeloo and Koerkamp (2025)
+    /// Pattern matching algorithm as described in Beeloo and5 Koerkamp (2025)
     Sassy,
     /// Rust Bio's Myers bit-parallel approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib’s (Šošić and Šikić, 2017).
     Myers,
