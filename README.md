@@ -116,9 +116,18 @@ Contributions to PrimerPincer are welcome! Here are some ways you can contribute
 2. Create a new branch for your feature (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run tests to ensure everything works
-5. Commit your changes (`git commit -m 'Add some amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+5. Format your code using `cargo fmt` and ensure it passes `cargo clippy --all-targets -- -D warnings`
+6. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: add new algorithm`, `fix: resolve compilation error`)
+7. Push to the branch (`git push origin feature/amazing-feature`)
+8. Open a Pull Request
+
+**CI Checks**: All pull requests will be automatically checked by our CI workflow (`.github/workflows/ci.yaml`):
+- **Commit messages** must follow the Conventional Commits specification (validated by Commitizen)
+- **Code formatting** must pass `cargo fmt --all -- --check`
+- **Code compilation** must pass `cargo check --all-targets`
+- **Code linting** must pass `cargo clippy --all-targets -- -D warnings`
+
+All CI checks must pass before your PR can be merged.
 
 
 ## Citation
