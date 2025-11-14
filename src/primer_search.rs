@@ -2,7 +2,6 @@ use crate::preparing_input::PrimerSet;
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet};
 use crate::search_algos::Algorithm;
 use crate::search_algos::{PrimerMatch, find_primer_degenerate, find_primer_expanded};
-use anyhow;
 
 /// Configuration for primer search
 #[derive(Debug, Clone)]
@@ -93,32 +92,30 @@ fn search_paired_primers_degenerate(
         read,
         &primers.forward,
         myers_patterns.map(|c| &c.forward),
-    ) {
-        if let Some(reverse_match) = {
-            let search_len = search_length.min(read.len());
-            let end_region = &read[read.len() - search_len..];
-            if let Some(match_result) = search_with_degenerate(
-                cfg,
-                end_region,
-                &primers.reverse_rc,
-                myers_patterns.map(|c| &c.reverse_rc),
-            ) {
-                let offset = read.len() - search_len;
-                Some(PrimerMatch {
-                    start: offset + match_result.start,
-                    end: offset + match_result.end,
-                })
-            } else {
-                None
-            }
-        } {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: forward_match.end,
-                trim_end: reverse_match.start,
-                needs_reverse_complement: false,
-            };
+    ) && let Some(reverse_match) = {
+        let search_len = search_length.min(read.len());
+        let end_region = &read[read.len() - search_len..];
+        if let Some(match_result) = search_with_degenerate(
+            cfg,
+            end_region,
+            &primers.reverse_rc,
+            myers_patterns.map(|c| &c.reverse_rc),
+        ) {
+            let offset = read.len() - search_len;
+            Some(PrimerMatch {
+                start: offset + match_result.start,
+                end: offset + match_result.end,
+            })
+        } else {
+            None
         }
+    } {
+        return PairedPrimerSearchResult {
+            found: true,
+            trim_start: forward_match.end,
+            trim_end: reverse_match.start,
+            needs_reverse_complement: false,
+        };
     }
 
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
@@ -127,32 +124,30 @@ fn search_paired_primers_degenerate(
         read,
         &primers.reverse,
         myers_patterns.map(|c| &c.reverse),
-    ) {
-        if let Some(forward_match) = {
-            let search_len = search_length.min(read.len());
-            let end_region = &read[read.len() - search_len..];
-            if let Some(match_result) = search_with_degenerate(
-                cfg,
-                end_region,
-                &primers.forward_rc,
-                myers_patterns.map(|c| &c.forward_rc),
-            ) {
-                let offset = read.len() - search_len;
-                Some(PrimerMatch {
-                    start: offset + match_result.start,
-                    end: offset + match_result.end,
-                })
-            } else {
-                None
-            }
-        } {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: reverse_match.end,
-                trim_end: forward_match.start,
-                needs_reverse_complement: true,
-            };
+    ) && let Some(forward_match) = {
+        let search_len = search_length.min(read.len());
+        let end_region = &read[read.len() - search_len..];
+        if let Some(match_result) = search_with_degenerate(
+            cfg,
+            end_region,
+            &primers.forward_rc,
+            myers_patterns.map(|c| &c.forward_rc),
+        ) {
+            let offset = read.len() - search_len;
+            Some(PrimerMatch {
+                start: offset + match_result.start,
+                end: offset + match_result.end,
+            })
+        } else {
+            None
         }
+    } {
+        return PairedPrimerSearchResult {
+            found: true,
+            trim_start: reverse_match.end,
+            trim_end: forward_match.start,
+            needs_reverse_complement: true,
+        };
     }
 
     // Not found
@@ -173,8 +168,8 @@ fn search_paired_primers_expanded(
     expanded_primers: &ExpandedPrimerSet,
 ) -> PairedPrimerSearchResult {
     // Scenario 1: Forward primer at start, reverse complement of reverse primer at end
-    if let Some(forward_match) = search_with_expanded(cfg, read, &expanded_primers.forward) {
-        if let Some(reverse_match) = {
+    if let Some(forward_match) = search_with_expanded(cfg, read, &expanded_primers.forward)
+        && let Some(reverse_match) = {
             let search_len = search_length.min(read.len());
             let end_region = &read[read.len() - search_len..];
             if let Some(match_result) =
@@ -188,19 +183,19 @@ fn search_paired_primers_expanded(
             } else {
                 None
             }
-        } {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: forward_match.end,
-                trim_end: reverse_match.start,
-                needs_reverse_complement: false,
-            };
         }
+    {
+        return PairedPrimerSearchResult {
+            found: true,
+            trim_start: forward_match.end,
+            trim_end: reverse_match.start,
+            needs_reverse_complement: false,
+        };
     }
 
     // Scenario 2: Reverse primer at start, reverse complement of forward primer at end
-    if let Some(reverse_match) = search_with_expanded(cfg, read, &expanded_primers.reverse) {
-        if let Some(forward_match) = {
+    if let Some(reverse_match) = search_with_expanded(cfg, read, &expanded_primers.reverse)
+        && let Some(forward_match) = {
             let search_len = search_length.min(read.len());
             let end_region = &read[read.len() - search_len..];
             if let Some(match_result) =
@@ -214,14 +209,14 @@ fn search_paired_primers_expanded(
             } else {
                 None
             }
-        } {
-            return PairedPrimerSearchResult {
-                found: true,
-                trim_start: reverse_match.end,
-                trim_end: forward_match.start,
-                needs_reverse_complement: true,
-            };
         }
+    {
+        return PairedPrimerSearchResult {
+            found: true,
+            trim_start: reverse_match.end,
+            trim_end: forward_match.start,
+            needs_reverse_complement: true,
+        };
     }
 
     // Not found

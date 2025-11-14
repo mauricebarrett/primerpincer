@@ -1,7 +1,6 @@
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet, reverse_complement};
 use crate::primer_search::{PairedPrimerSearchResult, PrimerMatcher};
 use crate::search_algos::Algorithm;
-use anyhow;
 use paraseq::Record;
 use paraseq::parallel::{IntoProcessError, ParallelProcessor};
 use std::borrow::Cow;
@@ -160,6 +159,7 @@ pub struct PrimerTrimmer {
 }
 
 impl PrimerTrimmer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         output: Box<dyn Write + Send>,
         primers: PrimerSet,

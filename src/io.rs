@@ -16,6 +16,7 @@ const OUTPUT_BUFFER_SIZE: usize = 8 * 1024 * 1024; // 8MB buffer
 
 /// Process FASTQ file with parallel primer trimming
 /// Automatically handles compressed (.gz, .zst, .xz, .bz2) and uncompressed FASTQ files via niffler
+#[allow(clippy::too_many_arguments)]
 pub fn process_fastq(
     input_path: &str,
     output_path: &str,

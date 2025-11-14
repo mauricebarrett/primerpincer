@@ -192,7 +192,7 @@ pub fn expand_degenerate_bases(seq: &str) -> Vec<String> {
         }
     };
 
-    let bases: Vec<Vec<char>> = seq.chars().map(|c| expand_base(c)).collect();
+    let bases: Vec<Vec<char>> = seq.chars().map(expand_base).collect();
 
     // Generate cartesian product of all base options
     fn cartesian_product(

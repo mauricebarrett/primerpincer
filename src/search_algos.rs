@@ -15,22 +15,17 @@
 use clap::ValueEnum;
 
 /// Algorithm selection for primer matching
-#[derive(ValueEnum, Clone, Debug, Copy)]
+#[derive(ValueEnum, Clone, Debug, Copy, Default)]
 pub enum Algorithm {
     /// Pattern matching algorithm as described in Beeloo and Koerkamp (2025)
+    #[default]
     Sassy,
-    /// Rust Bio's Myers bit-parallel approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib’s (Šošić and Šikić, 2017).
+    /// Rust Bio's Myers bit-parallel approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib's (Šošić and Šikić, 2017).
     Myers,
     /// Hamming distance algorithm as described in Waterman and Eggert (1987). Can tolerate mismatches but not indels.
     Hamming,
     /// Rust Bio's BNDM exact pattern matching algorithm as described in Baeza-Yates and Gonnet (1992). Exact matching only. No mismatch or indels tolerated.
     Bndm,
-}
-
-impl Default for Algorithm {
-    fn default() -> Self {
-        Algorithm::Sassy
-    }
 }
 use crate::preparing_input::build_myers_matcher;
 use crate::primer_search::SearchConfig;
@@ -65,7 +60,7 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
     let matches = searcher.search(primer.as_bytes(), &region_bytes, max_edits);
 
     // Find best match (lowest cost)
-    let best_match = matches.iter().min_by_key(|m| m.cost).and_then(|m| {
+    matches.iter().min_by_key(|m| m.cost).and_then(|m| {
         let overlap_len = m.text_end - m.text_start;
         let min_overlap_len = cfg.min_overlap.min(primer.len());
         let error_rate = (m.cost as f64) / (overlap_len as f64);
@@ -79,9 +74,7 @@ fn find_primer_sassy(cfg: &SearchConfig, read: &str, primer: &str) -> Option<Pri
         } else {
             None
         }
-    });
-
-    best_match
+    })
 }
 
 /// Find primer in read using Myers bit-parallel algorithm with IUPAC support
