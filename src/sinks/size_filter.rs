@@ -20,15 +20,15 @@ impl<S: RecordSink> SizeFilterSink<S> {
 impl<S: RecordSink> RecordSink for SizeFilterSink<S> {
     fn accept(&mut self, id: &str, seq: &str, qual: &str) -> std::io::Result<()> {
         let len = seq.len();
-        if let Some(min) = self.min_len {
-            if len < min {
-                return Ok(());
-            }
+        if let Some(min) = self.min_len
+            && len < min
+        {
+            return Ok(());
         }
-        if let Some(max) = self.max_len {
-            if len > max {
-                return Ok(());
-            }
+        if let Some(max) = self.max_len
+            && len > max
+        {
+            return Ok(());
         }
         self.inner.accept(id, seq, qual)
     }
