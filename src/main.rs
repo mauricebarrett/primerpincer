@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Reverse primer: {}", args.reverse_primer);
     eprintln!("Algorithm: {:?}", args.algorithm);
     eprintln!("Maximum error rate: {:.1}%", args.error_rate * 100.0);
-    eprintln!("Search length: {}", args.search_length);
+    eprintln!("Window size: {}", args.window_size);
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
     eprintln!("Output compression: {:?}", args.compression);
@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
         &args.output,
         &args.forward_primer,
         &args.reverse_primer,
-        args.search_length,
+        args.window_size,
         args.algorithm,
         args.error_rate,
         args.overlap,

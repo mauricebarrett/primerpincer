@@ -58,13 +58,13 @@ pub struct Cli {
     pub error_rate: f64,
 
     #[arg(
-        short = 'l',
-        long = "search-length",
+        short = 'w',
+        long = "window-size",
         value_name = "INT",
-        help = "Length to search for primer at start and end of sequence",
+        help = "Window size to search for primer at start and end of sequence",
         default_value_t = 100
     )]
-    pub search_length: usize,
+    pub window_size: usize,
 
     /// Minimum overlap length (cutadapt -O)
     #[arg(
