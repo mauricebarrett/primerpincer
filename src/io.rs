@@ -8,7 +8,6 @@ use paraseq::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
-use std::time::Instant;
 
 // Buffer size matching deacon's optimized configuration
 // 8MB buffers for both input and output for maximum throughput
@@ -43,7 +42,6 @@ pub fn process_fastq(
         compression.default_level(),
     )?;
 
-    let setup_start = Instant::now();
     let primers = PrimerSet::new(forward_primer, reverse_primer);
 
     // Build Myers matchers once if using Myers algorithm
@@ -77,11 +75,6 @@ pub fn process_fastq(
         );
     }
 
-    let setup_time = setup_start.elapsed();
-    eprintln!("⏱️  Setup time: {:.2}s", setup_time.as_secs_f64());
-
-    eprintln!("🎬 Starting FASTQ processing with {} threads", threads);
-
     // Create processor with pre-built caches
     let mut processor = PrimerTrimmer::new(
         output,
@@ -95,9 +88,6 @@ pub fn process_fastq(
     )?;
 
     // Use niffler for automatic compression detection (gzip, zstd, xz, bzip2)
-    let read_start = Instant::now();
-    let processing_start = Instant::now();
-
     let input_file = File::open(input_path)?;
     // Cast to Box<dyn Read + Send> for parallel processing compatibility
     let input_boxed: Box<dyn std::io::Read + Send> = Box::new(input_file);
@@ -105,23 +95,6 @@ pub fn process_fastq(
     let buffered = BufReader::with_capacity(OUTPUT_BUFFER_SIZE, decompressed_reader);
     let reader = fastx::Reader::new(buffered)?;
     reader.process_parallel(&mut processor, threads)?;
-
-    let processing_time = processing_start.elapsed();
-    let read_time = read_start.elapsed();
-
-    eprintln!(
-        "⏱️  Total processing time: {:.2}s",
-        processing_time.as_secs_f64()
-    );
-    eprintln!(
-        "⏱️  Input reading + decompression time: {:.2}s",
-        read_time.as_secs_f64()
-    );
-
-    let read_time_s = read_time.as_secs_f64();
-
-    // Print detailed timing statistics from the processor
-    processor.print_timing_stats(read_time_s);
 
     Ok(())
 }

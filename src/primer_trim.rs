@@ -7,8 +7,6 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
 
 /// Convert byte slice to string without UTF-8 validation.
 ///
@@ -66,88 +64,6 @@ fn trim_sequence<'a>(
     }
 }
 
-/// Timing statistics shared across all threads
-#[derive(Debug)]
-pub struct TimingStats {
-    pub search_time_ns: AtomicU64,
-    pub trim_time_ns: AtomicU64,
-    pub write_time_ns: AtomicU64,
-    pub records_processed: AtomicU64,
-    pub records_trimmed: AtomicU64,
-}
-
-impl TimingStats {
-    fn new() -> Self {
-        Self {
-            search_time_ns: AtomicU64::new(0),
-            trim_time_ns: AtomicU64::new(0),
-            write_time_ns: AtomicU64::new(0),
-            records_processed: AtomicU64::new(0),
-            records_trimmed: AtomicU64::new(0),
-        }
-    }
-
-    fn add_search_time(&self, nanos: u64) {
-        self.search_time_ns.fetch_add(nanos, Ordering::Relaxed);
-    }
-
-    fn add_trim_time(&self, nanos: u64) {
-        self.trim_time_ns.fetch_add(nanos, Ordering::Relaxed);
-    }
-
-    fn add_write_time(&self, nanos: u64) {
-        self.write_time_ns.fetch_add(nanos, Ordering::Relaxed);
-    }
-
-    fn increment_processed(&self) {
-        self.records_processed.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn increment_trimmed(&self) {
-        self.records_trimmed.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn print_stats(&self, read_time_s: f64) {
-        let search_s = self.search_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
-        let trim_s = self.trim_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
-        let write_s = self.write_time_ns.load(Ordering::Relaxed) as f64 / 1_000_000_000.0;
-        let processed = self.records_processed.load(Ordering::Relaxed);
-        let trimmed = self.records_trimmed.load(Ordering::Relaxed);
-
-        let total_time = read_time_s + search_s + trim_s + write_s;
-
-        eprintln!("\n📊 Performance Statistics:");
-        eprintln!("   Records processed: {}", processed);
-        eprintln!(
-            "   Records trimmed: {} ({:.1}%)",
-            trimmed,
-            (trimmed as f64 / processed as f64 * 100.0)
-        );
-        eprintln!("\n⏱️  Time Breakdown (cumulative across all threads):");
-        eprintln!(
-            "   Input reading: {:.2}s ({:.1}%)",
-            read_time_s,
-            read_time_s / total_time * 100.0
-        );
-        eprintln!(
-            "   Primer searching: {:.2}s ({:.1}%)",
-            search_s,
-            search_s / total_time * 100.0
-        );
-        eprintln!(
-            "   Sequence trimming: {:.2}s ({:.1}%)",
-            trim_s,
-            trim_s / total_time * 100.0
-        );
-        eprintln!(
-            "   Output writing: {:.2}s ({:.1}%)",
-            write_s,
-            write_s / total_time * 100.0
-        );
-        eprintln!("   Total accounted: {:.2}s", total_time);
-    }
-}
-
 /// Processor for trimming primers from FASTQ records
 /// Implements ParallelProcessor for use with paraseq parallel processing
 #[derive(Clone)]
@@ -155,7 +71,6 @@ pub struct PrimerTrimmer {
     matcher: PrimerMatcher,
     local_output: String,
     global_output: Arc<Mutex<Box<dyn Write + Send>>>,
-    pub timing_stats: Arc<TimingStats>,
 }
 
 impl PrimerTrimmer {
@@ -184,12 +99,7 @@ impl PrimerTrimmer {
             matcher,
             local_output: String::new(),
             global_output: Arc::new(Mutex::new(output)),
-            timing_stats: Arc::new(TimingStats::new()),
         })
-    }
-
-    pub fn print_timing_stats(&self, read_time_s: f64) {
-        self.timing_stats.print_stats(read_time_s);
     }
 }
 
@@ -204,40 +114,23 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
             .ok_or_else(|| anyhow::anyhow!("Missing quality scores"))?;
         let qual = bytes_to_str_unchecked(qual_bytes);
 
-        // Time primer searching
-        let search_start = Instant::now();
         let search_result = self.matcher.search_primers(seq);
-        self.timing_stats
-            .add_search_time(search_start.elapsed().as_nanos() as u64);
 
-        self.timing_stats.increment_processed();
-
-        // Time trimming operations
-        let trim_start = Instant::now();
         let trimmed = trim_sequence(seq, qual, &search_result);
-        self.timing_stats
-            .add_trim_time(trim_start.elapsed().as_nanos() as u64);
 
         if let Some((trimmed_seq, trimmed_qual)) = trimmed {
-            self.timing_stats.increment_trimmed();
-
-            // Time write operations (writing to local buffer)
-            let write_start = Instant::now();
             use std::fmt::Write;
             writeln!(self.local_output, "@{}", record.id_str())
                 .map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "{}", trimmed_seq).map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "+").map_err(|e| e.into_process_error())?;
             writeln!(self.local_output, "{}", trimmed_qual).map_err(|e| e.into_process_error())?;
-            self.timing_stats
-                .add_write_time(write_start.elapsed().as_nanos() as u64);
         }
 
         Ok(())
     }
 
     fn on_batch_complete(&mut self) -> paraseq::parallel::Result<()> {
-        let write_start = Instant::now();
         let mut global_out = self
             .global_output
             .lock()
@@ -245,8 +138,6 @@ impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
         global_out.write_all(self.local_output.as_bytes())?;
         global_out.flush()?;
         self.local_output.clear();
-        self.timing_stats
-            .add_write_time(write_start.elapsed().as_nanos() as u64);
         Ok(())
     }
 }
