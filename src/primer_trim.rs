@@ -67,13 +67,13 @@ fn trim_sequence<'a>(
 /// Processor for trimming primers from FASTQ records
 /// Implements ParallelProcessor for use with paraseq parallel processing
 #[derive(Clone)]
-pub struct PrimerTrimmer {
+pub struct AmpliconRecordProcessor {
     matcher: PrimerMatcher,
     local_output: String,
     global_output: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
-impl PrimerTrimmer {
+impl AmpliconRecordProcessor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         output: Box<dyn Write + Send>,
@@ -103,7 +103,7 @@ impl PrimerTrimmer {
     }
 }
 
-impl<R: Record> ParallelProcessor<R> for PrimerTrimmer {
+impl<R: Record> ParallelProcessor<R> for AmpliconRecordProcessor {
     fn process_record(&mut self, record: R) -> paraseq::parallel::Result<()> {
         // Convert sequence and quality to &str using unchecked conversion
         // Safe: paraseq parser already validated UTF-8 during parsing

@@ -1,6 +1,6 @@
 use crate::compression::OutputCompression;
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet};
-use crate::primer_trim::PrimerTrimmer;
+use crate::primer_trim::AmpliconRecordProcessor;
 use crate::search_algos::Algorithm;
 use niffler::send;
 use paraseq::fastx;
@@ -76,7 +76,7 @@ pub fn process_fastq(
     }
 
     // Create processor with pre-built caches
-    let mut processor = PrimerTrimmer::new(
+    let mut processor = AmpliconRecordProcessor::new(
         output,
         primers,
         search_length,
