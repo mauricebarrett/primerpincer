@@ -11,6 +11,14 @@ repos:
       - id: cargo-check
         name: Cargo check
 
+      - id: clippy
+        name: Cargo clippy (deny warnings)
+        args:
+          - --all-targets
+          - --
+          - -D
+          - warnings
+
   # General file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
