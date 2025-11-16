@@ -1,13 +1,16 @@
+use crate::amplicon_processor::AmpliconRecordProcessor;
 use crate::compression::OutputCompression;
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet};
-use crate::primer_trim::AmpliconRecordProcessor;
 use crate::search_algos::Algorithm;
+use crate::sinks::{SizeFilterSink, WriterSink};
 use niffler::send;
 use paraseq::fastx;
 use paraseq::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Buffer size matching deacon's optimized configuration
 // 8MB buffers for both input and output for maximum throughput
@@ -27,6 +30,8 @@ pub fn process_fastq(
     min_overlap: usize,
     compression: OutputCompression,
     threads: usize,
+    min_length: Option<usize>,
+    max_length: Option<usize>,
 ) -> anyhow::Result<()> {
     // Create output directory if it doesn't exist
     if let Some(parent) = Path::new(output_path).parent() {
@@ -75,9 +80,16 @@ pub fn process_fastq(
         );
     }
 
-    // Create processor with pre-built caches
+    // Build sink chain: SizeFilter -> Writer, with shared QC counters
+    let input_count = Arc::new(AtomicUsize::new(0));
+    let trimmed_count = Arc::new(AtomicUsize::new(0));
+    let written_count = Arc::new(AtomicUsize::new(0));
+    let writer_sink = WriterSink::new(output, written_count.clone());
+    let sink_chain = SizeFilterSink::new(writer_sink, min_length, max_length);
+
+    // Create processor with pre-built caches and sink
     let mut processor = AmpliconRecordProcessor::new(
-        output,
+        sink_chain,
         primers,
         search_length,
         algorithm,
@@ -85,6 +97,8 @@ pub fn process_fastq(
         min_overlap,
         myers_patterns,
         expanded_primers,
+        input_count.clone(),
+        trimmed_count.clone(),
     )?;
 
     // Use niffler for automatic compression detection (gzip, zstd, xz, bzip2)
@@ -95,6 +109,14 @@ pub fn process_fastq(
     let buffered = BufReader::with_capacity(OUTPUT_BUFFER_SIZE, decompressed_reader);
     let reader = fastx::Reader::new(buffered)?;
     reader.process_parallel(&mut processor, threads)?;
+
+    // QC summary
+    eprintln!(
+        "QC — reads: input={}, post-trim={}, post-size={}",
+        input_count.load(Ordering::Relaxed),
+        trimmed_count.load(Ordering::Relaxed),
+        written_count.load(Ordering::Relaxed)
+    );
 
     Ok(())
 }

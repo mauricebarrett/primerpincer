@@ -1,10 +1,11 @@
+mod amplicon_processor;
 mod cli;
 mod compression;
 mod io;
 mod preparing_input;
 mod primer_search;
-mod primer_trim;
 mod search_algos;
+mod sinks;
 
 use clap::Parser;
 use cli::Cli;
@@ -27,6 +28,8 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
     eprintln!("Output compression: {:?}", args.compression);
+    eprintln!("Min length: {:?}", args.min_length);
+    eprintln!("Max length: {:?}", args.max_length);
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
 
     // Process FASTQ file with primer trimming
@@ -41,6 +44,8 @@ fn main() -> anyhow::Result<()> {
         args.overlap,
         args.compression,
         args.threads,
+        args.min_length,
+        args.max_length,
     )?;
 
     eprintln!("✅ Primer trimming complete!");

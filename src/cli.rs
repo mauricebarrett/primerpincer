@@ -89,4 +89,12 @@ pub struct Cli {
         default_value_t = OutputCompression::Gzip
     )]
     pub compression: OutputCompression,
+
+    /// Minimum read length after trimming (inclusive)
+    #[arg(short = 'm', long = "min-length", value_name = "INT")]
+    pub min_length: Option<usize>,
+
+    /// Maximum read length after trimming (inclusive)
+    #[arg(short = 'M', long = "max-length", value_name = "INT")]
+    pub max_length: Option<usize>,
 }
