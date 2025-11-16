@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/mauricebarrett/primerpincer/compare/v0.6.1...v0.7.0) (2025-11-16)
+
+
+### Features
+
+* implement AmpliconRecordProcessor for primer trimming with size filtering ([e5e61a7](https://github.com/mauricebarrett/primerpincer/commit/e5e61a7d2601bf52787f79de5e5361e9e947a5be))
+
 ## [0.6.1](https://github.com/mauricebarrett/primerpincer/compare/v0.6.0...v0.6.1) (2025-11-14)
 
 
