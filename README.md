@@ -48,7 +48,7 @@ PrimerPincer is designed to scale with these demands, providing rapid and accura
 
 ### 🔍 Multiple Search Algorithms
 Choose the best algorithm for your use case:
-- **Sassy** (default) - Approximate string matching as described in Beeloo and Koerkamp (2025)
+- **Sassy** (default) - Approximate string matching as described in Beeloo and Groot Koerkamp (2025)
 - **Myers** - Approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib’s (Šošić and Šikić, 2017).
 - **Hamming** - Hamming distance string matching with mistmatch tolerance
 - **BNDM** - Exact match only. No mistmatch or indels tolerance
@@ -134,7 +134,7 @@ All CI checks must pass before your PR can be merged.
 
 If you use PrimerPincer in your research, please cite:
 
-	Beeloo, R. & Koerkamp, R. G. Sassy: Searching Short DNA Strings in the 2020s. 2025.07.22.666207 Preprint at https://doi.org/10.1101/2025.07.22.666207 (2025).
+	Beeloo, R. & Groot Koerkamp, R. Sassy: Searching Short DNA Strings in the 2020s. 2025.07.22.666207 Preprint at https://doi.org/10.1101/2025.07.22.666207 (2025).
 
 
 ## Licence
