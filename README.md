@@ -171,7 +171,11 @@ primerpincer \
  -t 12 \
  -a sassy \
  -O 6 \
- -l 500
+ -c gzip \
+ -w 200 \
+ -m 1300 \
+ -M 1600 \
+ -q 20
 
 ```
 
