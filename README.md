@@ -35,7 +35,7 @@ In amplicon-based microbiome studies, such as those targeting 16S, ITS, 18S, or 
 2. They are susceptible to PCR-induced mutagenesis, and therefore may not accurately represent true biological sequences.
 3. They often contain uninformative sequence data, and removing them can enhance computational performance in subsequent analyses.
 
-The rise of third-generation sequencing platforms from PacBio and ONT has enabled the use of much longer marker gene regions than was previously feasible—such as the full-length 16S (V1–V9), 16S–ITS–23S operon, or 18S–ITS–28S operon. Additionally, the throughput and read counts produced per run continue to increase, driving a steady growth in the total volume of sequencing data generated.
+The rise of third-generation sequencing platforms from PacBio and ONT has enabled the use of much longer marker gene regions than was previously feasible—such as the full-length 16S (1.5 Kb), 16S–ITS–23S operon (4.5Kb), or 18S–ITS–28S (5Kb) operon. Additionally, the throughput and read counts produced per run continue to increase, driving a steady growth in the total volume of sequencing data generated.
 
 PrimerPincer is designed to scale with these demands, providing rapid and accurate primer identification and removal for long-read datasets—with performance and scalability built for the future of sequencing.
 
