@@ -43,7 +43,7 @@ PrimerPincer is designed to scale with these demands, providing rapid and accura
 
 ### ⚡ Lightning Fast
 - **Rust-based** performance with zero-cost abstractions
-- **Parallel processing** using [Paraseq](https://github.com/baudm/parseq) for multi-threaded FASTQ parsing and processing
+- **Parallel processing** using [Paraseq](https://docs.rs/paraseq/latest/paraseq/) for multi-threaded FASTQ parsing and processing
 - **SIMD optimizations** available
 
 ### 🔍 Multiple Search Algorithms
