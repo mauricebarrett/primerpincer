@@ -64,6 +64,22 @@ Full support for IUPAC nucleotide ambiguity codes in primer sequences:
 - Automatically expands degenerate primers or uses degenerate-aware matching algorithms
 - Proper reverse complement handling for all ambiguity codes
 
+### 🔄 Orientation normalization
+The tool checks forward orientation first, followed by reverse orientation:
+- If both primers are found in forward orientation of the read, the read is kept as-is
+- If not found, the reverse orientation is searched for both primers
+- If both primers are found in reverse orientation of the read, the read is kept and the reverse complement is output
+
+### 📏 Size filtering
+An optional size filtering can be applied:
+- Minimum length to accept amplicons
+- Maximum length to accept amplicons
+
+### ✅ Quality filtering
+Reads that fall below a determined average Phred quality score threshold are filtered out:
+- Averaging basecall quality scores is calculated as [Wouter De Coster](https://github.com/wdecoster) outlines in his [blog](https://gigabaseorgigabyte.wordpress.com/2017/06/26/averaging-basecall-quality-scores-the-right-way/)
+- This aims to replicate the functionality of [chopper](https://github.com/wdecoster/chopper)
+- For more advanced quality trimming options, see [chopper](https://github.com/wdecoster/chopper)!
 
 ## Usage
 
@@ -73,18 +89,75 @@ PrimerPincer - a CLI tool for the rapid identification and removal of paired pri
 Usage: primerpincer [OPTIONS] --input <FILE> --output <FILE> --forward <SEQUENCE> --reverse <SEQUENCE>
 
 Options:
-  -i, --input <FILE>           Input FASTQ file
-  -o, --output <FILE>          Output FASTQ file
-  -f, --forward <SEQUENCE>     Forward primer sequence (5' to 3' orientation)
-  -r, --reverse <SEQUENCE>     Reverse primer sequence (5' to 3' orientation)
-  -a, --algorithm <ALGORITHM>  Algorithm to use for primer matching [default: sassy] [possible values: sassy, myers, hamming, bndm]
-  -e, --error-rate <FLOAT>     Maximum error rate in primer matching (e.g., 0.15 for 15% errors) [default: 0.15]
-  -l, --search-length <INT>    Length to search for primer at start and end of sequence [default: 100]
-  -O, --overlap <MINLENGTH>    Minimum overlap length. Require MINLENGTH bases of the primer to match (default 6) [default: 6]
-  -t, --threads <INT>          Number of threads to use [default: 4]
-  -h, --help                   Print help (see more with '--help')
-  -V, --version                Print version
+  -i, --input <FILE>
+          Input FASTQ file
 
+  -o, --output <FILE>
+          Output FASTQ file
+
+  -f, --forward <SEQUENCE>
+          Forward primer sequence (5' to 3' orientation)
+
+  -r, --reverse <SEQUENCE>
+          Reverse primer sequence (5' to 3' orientation)
+
+  -a, --algorithm <ALGORITHM>
+          Algorithm to use for primer matching
+
+          Possible values:
+          - sassy:   Pattern matching algorithm as described in Beeloo and Koerkamp (2025)
+          - myers:   Rust Bio's Myers bit-parallel algorithm, very similar to Edlib's algorithm as described in Šošić and Šikić (2017)
+          - hamming: Hamming distance algorithm as described in Waterman and Eggert (1987). Can tolerate mismatches but not indels
+          - bndm:    Rust Bio's BNDM exact pattern matching algorithm as described in Baeza-Yates and Gonnet (1992). Exact matching only. No mismatch or indels tolerated
+
+          [default: sassy]
+
+  -e, --error-rate <FLOAT>
+          Maximum error rate in primer matching (e.g., 0.15 for 15% errors)
+
+          [default: 0.15]
+
+  -w, --window-size <INT>
+          Window size to search for primer at start and end of sequence
+
+          [default: 100]
+
+  -O, --overlap <MINLENGTH>
+          Minimum overlap length. Require MINLENGTH bases of the primer to match (default 6)
+
+          [default: 6]
+
+  -t, --threads <INT>
+          Number of threads to use
+
+          [default: 4]
+
+  -c, --compression <COMPRESSION>
+          Compression format for the output FASTQ (defaults to gzip)
+
+          Possible values:
+          - none:  No compression; write plain text FASTQ
+          - gzip:  Standard gzip compression
+          - bzip2: bzip2 compression
+          - xz:    LZMA/XZ compression
+          - zstd:  Zstandard compression
+
+          [default: gzip]
+
+  -m, --min-length <INT>
+          Minimum read length after trimming (inclusive)
+
+  -M, --max-length <INT>
+          Maximum read length after trimming (inclusive)
+
+  -q, --min-average-quality <FLOAT>
+          Minimum Average Quality Score
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
 
 ## Examples

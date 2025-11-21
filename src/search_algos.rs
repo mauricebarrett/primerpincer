@@ -20,7 +20,7 @@ pub enum Algorithm {
     /// Pattern matching algorithm as described in Beeloo and Koerkamp (2025)
     #[default]
     Sassy,
-    /// Rust Bio's Myers bit-parallel approximate pattern matching algorithm as described in Myers (1999). Implementation is very similar to Edlib's (Šošić and Šikić, 2017).
+    /// Rust Bio's Myers bit-parallel algorithm, very similar to Edlib's algorithm as described in Šošić and Šikić (2017).
     Myers,
     /// Hamming distance algorithm as described in Waterman and Eggert (1987). Can tolerate mismatches but not indels.
     Hamming,
