@@ -2,7 +2,7 @@ use crate::amplicon_processor::AmpliconRecordProcessor;
 use crate::compression::OutputCompression;
 use crate::preparing_input::{ExpandedPrimerSet, MyersPatternSet, PrimerSet};
 use crate::search_algos::Algorithm;
-use crate::sinks::{SizeFilterSink, WriterSink};
+use crate::sinks::{QualityFilterSink, SizeFilterSink, WriterSink};
 use niffler::send;
 use paraseq::fastx;
 use paraseq::prelude::*;
@@ -32,6 +32,7 @@ pub fn process_fastq(
     threads: usize,
     min_length: Option<usize>,
     max_length: Option<usize>,
+    min_average_quality: Option<f64>,
 ) -> anyhow::Result<()> {
     // Create output directory if it doesn't exist
     if let Some(parent) = Path::new(output_path).parent() {
@@ -80,12 +81,24 @@ pub fn process_fastq(
         );
     }
 
-    // Build sink chain: SizeFilter -> Writer, with shared QC counters
+    // Build sink chain: size filter -> quality filter -> writer
     let input_count = Arc::new(AtomicUsize::new(0));
     let trimmed_count = Arc::new(AtomicUsize::new(0));
+    let quality_filtered_count = Arc::new(AtomicUsize::new(0));
+    let size_filtered_count = Arc::new(AtomicUsize::new(0));
     let written_count = Arc::new(AtomicUsize::new(0));
     let writer_sink = WriterSink::new(output, written_count.clone());
-    let sink_chain = SizeFilterSink::new(writer_sink, min_length, max_length);
+    let quality_filter = QualityFilterSink::new(
+        writer_sink,
+        min_average_quality,
+        quality_filtered_count.clone(),
+    );
+    let sink_chain = SizeFilterSink::new(
+        quality_filter,
+        min_length,
+        max_length,
+        size_filtered_count.clone(),
+    );
 
     // Create processor with pre-built caches and sink
     let mut processor = AmpliconRecordProcessor::new(
@@ -110,12 +123,22 @@ pub fn process_fastq(
     let reader = fastx::Reader::new(buffered)?;
     reader.process_parallel(&mut processor, threads)?;
 
-    // QC summary
+    // QC summary - show reads that passed each step
+    // Order: SizeFilter -> QualityFilter -> Writer
+    let input = input_count.load(Ordering::Relaxed);
+    let post_trim = trimmed_count.load(Ordering::Relaxed);
+    let size_filtered = size_filtered_count.load(Ordering::Relaxed);
+    let quality_filtered = quality_filtered_count.load(Ordering::Relaxed);
+    let written = written_count.load(Ordering::Relaxed);
+
+    // Size filtering happens first
+    let post_size = post_trim.saturating_sub(size_filtered);
+    // Quality filtering happens second (on reads that passed size filter)
+    let post_quality = post_size.saturating_sub(quality_filtered);
+
     eprintln!(
-        "QC — reads: input={}, post-trim={}, post-size={}",
-        input_count.load(Ordering::Relaxed),
-        trimmed_count.load(Ordering::Relaxed),
-        written_count.load(Ordering::Relaxed)
+        "QC — reads: input={}, post-trim={}, post-size={}, post-quality={}, written={}",
+        input, post_trim, post_size, post_quality, written
     );
 
     Ok(())

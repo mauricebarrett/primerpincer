@@ -28,8 +28,24 @@ fn main() -> anyhow::Result<()> {
     eprintln!("Minimum overlap: {}", args.overlap);
     eprintln!("Threads: {}", args.threads);
     eprintln!("Output compression: {:?}", args.compression);
-    eprintln!("Min length: {:?}", args.min_length);
-    eprintln!("Max length: {:?}", args.max_length);
+    eprintln!(
+        "Min length: {}",
+        args.min_length
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "not set".to_string())
+    );
+    eprintln!(
+        "Max length: {}",
+        args.max_length
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "not set".to_string())
+    );
+    eprintln!(
+        "Min average quality: {}",
+        args.min_average_quality
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "not set".to_string())
+    );
     eprintln!("Version: {}", env!("CARGO_PKG_VERSION"));
 
     // Process FASTQ file with primer trimming
@@ -46,6 +62,7 @@ fn main() -> anyhow::Result<()> {
         args.threads,
         args.min_length,
         args.max_length,
+        args.min_average_quality,
     )?;
 
     eprintln!("✅ Primer trimming complete!");

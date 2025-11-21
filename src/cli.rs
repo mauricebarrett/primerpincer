@@ -97,4 +97,8 @@ pub struct Cli {
     /// Maximum read length after trimming (inclusive)
     #[arg(short = 'M', long = "max-length", value_name = "INT")]
     pub max_length: Option<usize>,
+
+    /// Minimum Average Quality Score
+    #[arg(short = 'q', long = "min-average-quality", value_name = "FLOAT")]
+    pub min_average_quality: Option<f64>,
 }

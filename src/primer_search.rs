@@ -17,7 +17,7 @@ pub struct SearchConfig {
 pub struct PairedPrimerSearchResult {
     pub found: bool,
     pub trim_start: usize,              // Position to trim from start
-    pub trim_end: usize,                // Position to trim from end (from 3' end)
+    pub trim_end: usize,                // Position to trim from end
     pub needs_reverse_complement: bool, // Whether read needs to be reverse complemented
 }
 
