@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/mauricebarrett/primerpincer/compare/v0.7.0...v0.8.0) (2025-11-21)
+
+
+### Features
+
+* add minimum average quality filtering to primer trimming process ([f0a7305](https://github.com/mauricebarrett/primerpincer/commit/f0a7305adb5d74cf69cebb6d2b4f47cf9880112c))
+
 # [0.7.0](https://github.com/mauricebarrett/primerpincer/compare/v0.6.1...v0.7.0) (2025-11-16)
 
 
